@@ -24,6 +24,10 @@ final class RemoteHost: ObservableObject {
     @Published private(set) var current: String?
     /// While Pairing: the code to type on the Source.
     @Published private(set) var pairingCode: String?
+    /// The list of Macs to show on the Edge is open (from the Source pill).
+    @Published var chooserOpen = false
+    /// The Source is in Edit mode: its toolbar is where the Source pill would be.
+    @Published private(set) var sourceEditing = false
     /// A Remote view ended on its own; the reason, for a Toast.
     var onProblem: (String) -> Void = { NSLog("EdgeDeck: Remote view: \($0)") }
     /// The Dashboard size the Source should draw at.
@@ -98,6 +102,7 @@ final class RemoteHost: ObservableObject {
         format = nil
         display.sampleBufferRenderer.flush(removingDisplayedImage: true) {}
         if pairingCode != nil { pairingCode = nil }
+        if sourceEditing { sourceEditing = false }
         if current != nil { current = nil }
     }
 
@@ -154,6 +159,8 @@ final class RemoteHost: ObservableObject {
             format = Self.formatDescription(payload)
         case .frame:
             if let format, let sample = Self.sampleBuffer(payload, format: format) { enqueue(sample) }
+        case .state:
+            sourceEditing = payload.first == 1
         default:
             break
         }
@@ -233,7 +240,12 @@ final class RemoteStreamView: NSView {
         layer = host.display
         wantsLayer = true
         let overlay = PassThroughHostingView(rootView: RemoteOverlay().environmentObject(host))
-        overlay.passesThrough = { [weak host] in host?.pairingCode == nil }
+        overlay.passesThrough = { [weak host, weak self] point in
+            guard let host, let self else { return true }
+            if host.pairingCode != nil || host.chooserOpen { return false }
+            // Only the Source pill, bottom right, is ours; the rest goes to the Source.
+            return host.sourceEditing || !SourcePill.frame(in: self.bounds).contains(point)
+        }
         overlay.autoresizingMask = [.width, .height]
         addSubview(overlay)
     }
@@ -256,8 +268,11 @@ final class RemoteStreamView: NSView {
 
 /// Lets clicks through to the view below unless `passesThrough` says otherwise.
 private final class PassThroughHostingView<Content: View>: NSHostingView<Content> {
-    var passesThrough: () -> Bool = { true }
-    override func hitTest(_ point: NSPoint) -> NSView? { passesThrough() ? nil : super.hitTest(point) }
+    /// Given the point in the superview's coordinates (bottom-left origin; this view is flipped).
+    var passesThrough: (NSPoint) -> Bool = { _ in true }
+    override func hitTest(_ point: NSPoint) -> NSView? {
+        passesThrough(point) ? nil : super.hitTest(point)
+    }
     override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
 }
 
@@ -283,6 +298,13 @@ private struct RemoteOverlay: View {
                 }
                 .foregroundStyle(.white)
             }
+        } else if host.current != nil {
+            ZStack {
+                if !host.sourceEditing {
+                    SourcePill().frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomTrailing)
+                }
+                if host.chooserOpen { SourceChooser() }
+            }
         }
     }
 }
@@ -290,7 +312,7 @@ private struct RemoteOverlay: View {
 // MARK: - Source
 
 /// The Source side: offers this Mac's Dashboard to Hosts and streams it while one is watching.
-final class RemoteSource {
+final class RemoteSource: ObservableObject {
     /// A Host started watching at this Dashboard size (nil = nobody watching). The app delegate
     /// places the Dashboard panel and returns it, for capture.
     var onWatch: (CGSize?) -> NSWindow? = { _ in nil }
@@ -311,6 +333,13 @@ final class RemoteSource {
     private var lastHeard = Date()
     private var timer: Timer?
     private var awake: IOPMAssertionID = 0
+
+    /// Whether a Host is watching (Takeovers are offered only when not).
+    @Published private(set) var isWatched = false
+    /// This Mac's Dashboard is in Edit mode; the Host is told while it watches.
+    var editing = false {
+        didSet { if editing != oldValue, window != nil { channel?.send(.state, Data([editing ? 1 : 0])) } }
+    }
 
     func start() {
         do {
@@ -398,6 +427,8 @@ final class RemoteSource {
         guard window == nil else { return }
         guard let window = onWatch(size) else { return stop() }
         self.window = window
+        isWatched = true
+        channel?.send(.state, Data([editing ? 1 : 0]))
         // A sleeping display stops the capture, so keep it awake while watched.
         IOPMAssertionCreateWithName(kIOPMAssertionTypePreventUserIdleDisplaySleep as CFString, IOPMAssertionLevel(kIOPMAssertionLevelOn),
                                     "EdgeDeck Remote view" as CFString, &awake)
@@ -428,6 +459,7 @@ final class RemoteSource {
         if awake != 0 { IOPMAssertionRelease(awake); awake = 0 }
         if window != nil { _ = onWatch(nil) }
         window = nil
+        if isWatched { isWatched = false }
     }
 
     @MainActor
@@ -548,5 +580,78 @@ private final class StreamOutput: NSObject, SCStreamOutput {
               let info = (CMSampleBufferGetSampleAttachmentsArray(buffer, createIfNecessary: false) as? [[SCStreamFrameInfo: Any]])?.first,
               let raw = info[.status] as? Int, SCFrameStatus(rawValue: raw) == .complete else { return }
         handle(buffer)
+    }
+}
+
+// MARK: - Source pill
+
+/// Bottom right of the Edge: which Mac's Dashboard is showing. Tap to choose another.
+struct SourcePill: View {
+    @EnvironmentObject var host: RemoteHost
+    static let size = CGSize(width: 250, height: 68)
+
+    /// Where it sits in a view of `bounds` (AppKit coordinates, bottom-left origin).
+    static func frame(in bounds: CGRect) -> CGRect {
+        CGRect(x: bounds.maxX - size.width, y: bounds.minY, width: size.width, height: size.height)
+    }
+
+    var body: some View {
+        Button { host.chooserOpen = true } label: {
+            Label(host.current ?? "This Mac", systemImage: host.current == nil ? "display" : "display.2")
+                .font(.system(size: 17, weight: .bold, design: .rounded))
+                .lineLimit(1)
+                .foregroundStyle(Color.white.opacity(0.85))
+                .frame(maxWidth: Self.size.width - 56)
+                .fixedSize()
+                .padding(.horizontal, 18)
+                .frame(height: 48)
+                .background(Theme.tileRaised.opacity(0.92), in: Capsule())
+                .overlay(Capsule().strokeBorder(Color.white.opacity(0.18), lineWidth: 1))
+                .shadow(color: .black.opacity(0.5), radius: 8)
+                .padding(10)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(PressableStyle())
+        .frame(width: Self.size.width, height: Self.size.height, alignment: .trailing)
+    }
+}
+
+/// The Macs whose Dashboard the Edge can show: this one and every Source found.
+struct SourceChooser: View {
+    @EnvironmentObject var host: RemoteHost
+
+    var body: some View {
+        ZStack {
+            Color.black.opacity(0.7)
+                .contentShape(Rectangle())
+                .onTapGesture { host.chooserOpen = false }
+            VStack(spacing: 18) {
+                Text("Show on the Edge").font(.system(size: 22, weight: .bold, design: .rounded)).foregroundStyle(.white)
+                HStack(spacing: 16) {
+                    choice(RemoteWire.localName + " (this Mac)", symbol: "display", selected: host.current == nil) { host.end() }
+                    ForEach(host.sources, id: \.self) { name in
+                        choice(name, symbol: "display.2", selected: host.current == name) { host.show(name) }
+                    }
+                }
+            }
+        }
+    }
+
+    private func choice(_ title: String, symbol: String, selected: Bool, action: @escaping () -> Void) -> some View {
+        Button {
+            host.chooserOpen = false
+            if !selected { action() }
+        } label: {
+            VStack(spacing: 12) {
+                Image(systemName: symbol).font(.system(size: 40, weight: .semibold))
+                Text(title).font(.system(size: 18, weight: .semibold, design: .rounded)).lineLimit(1)
+            }
+            .foregroundStyle(.white)
+            .frame(width: 260, height: 160)
+            .background(selected ? Color(hex: "#0A84FF").opacity(0.45) : Theme.tileRaised, in: RoundedRectangle(cornerRadius: 22, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: 22, style: .continuous).strokeBorder(Color.white.opacity(selected ? 0.6 : 0.15), lineWidth: 2))
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(PressableStyle())
     }
 }

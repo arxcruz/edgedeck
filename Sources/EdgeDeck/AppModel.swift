@@ -87,6 +87,9 @@ final class AppModel: ObservableObject {
             .store(in: &cancellables)
 
         remoteHost.onProblem = { [weak self] text in self?.flashPlayerMessage(text) }
+        $editing
+            .sink { [weak self] editing in self?.remoteSource.editing = editing }
+            .store(in: &cancellables)
 
         music.$message
             .compactMap { $0 }
@@ -98,7 +101,7 @@ final class AppModel: ObservableObject {
         }
 
         // Forward nested changes so views observing the model refresh.
-        for publisher in [configStore.objectWillChange, touch.objectWillChange, notifications.objectWillChange, guest.objectWillChange, player.objectWillChange, ai.objectWillChange, remoteHost.objectWillChange] {
+        for publisher in [configStore.objectWillChange, touch.objectWillChange, notifications.objectWillChange, guest.objectWillChange, player.objectWillChange, ai.objectWillChange, remoteHost.objectWillChange, remoteSource.objectWillChange] {
             publisher.sink { [weak self] _ in self?.objectWillChange.send() }.store(in: &cancellables)
         }
 
@@ -137,6 +140,7 @@ final class AppModel: ObservableObject {
     /// Tapping a notification: click the real banner (so the app opens the right
     /// conversation), then move the app onto the Edge if it's in `bringToEdgeOnTap`.
     func open(_ notification: EdgeNotification) {
+        remoteHost.end()  // opening a Toast's app ends a Remote view
         let running = AppLocator.running(notification.app)
         if let banner = notifications.liveBanner(for: notification) {
             AX.perform(banner, kAXPressAction)

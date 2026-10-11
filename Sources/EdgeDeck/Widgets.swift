@@ -386,9 +386,11 @@ struct RunningAppsWidget: View {
                 Text(item.name).font(.system(size: 20, weight: .bold, design: .rounded)).lineLimit(1)
             }
             HStack(spacing: 10) {
-                SheetButton(title: "Bring to Edge", symbol: "rectangle.portrait.and.arrow.right", tint: Color(hex: "#BF5AF2")) {
-                    state.selected = nil
-                    model.bringToEdge(item)
+                if !model.remoteSource.isWatched {
+                    SheetButton(title: "Bring to Edge", symbol: "rectangle.portrait.and.arrow.right", tint: Color(hex: "#BF5AF2")) {
+                        state.selected = nil
+                        model.bringToEdge(item)
+                    }
                 }
                 SheetButton(title: "Hide", symbol: "eye.slash", tint: Color(hex: "#5E9EFF")) {
                     state.selected = nil
@@ -609,7 +611,7 @@ struct NowPlayingWidget: View {
                     PillButton(title: "Open in \(source.localizedName ?? "app")", symbol: "arrow.up.forward.app", scale: scale) {
                         nowPlaying.bringSourceToFront()
                     }
-                    if BrowserTab.isBrowser(source) {
+                    if BrowserTab.isBrowser(source) && !model.remoteSource.isWatched {
                         PillButton(title: "Watch on Edge", symbol: "play.rectangle.on.rectangle", scale: scale, prominent: true) {
                             model.watchOnEdge()
                         }

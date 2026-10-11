@@ -55,6 +55,14 @@ struct DashboardView: View {
                 EditLayoutButton { model.editing = true }
                     .padding(8)
                     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomLeading)
+                // Only on the Edge, and only with another Mac to switch to.
+                if model.edgeConnected && !model.remoteHost.sources.isEmpty {
+                    SourcePill().environmentObject(model.remoteHost)
+                        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomTrailing)
+                }
+            }
+            if model.remoteHost.chooserOpen && model.remoteHost.current == nil {
+                SourceChooser().environmentObject(model.remoteHost)
             }
 
             if let id = model.cityEditorWidgetID, model.widget(id) != nil {
@@ -221,6 +229,8 @@ struct AgentToastView: View {
             .lineLimit(1)
             Spacer(minLength: 0)
             // Bring to Edge: answer it here when the Mac's own screen isn't in front of you.
+            // Not from a Remote view: this Mac (the Source) has no Edge to bring it to.
+            if !model.remoteSource.isWatched {
             Button { model.bringToEdge(session) } label: {
                 Label("Bring to Edge", systemImage: "rectangle.portrait.and.arrow.right")
                     .font(.system(size: 17, weight: .semibold, design: .rounded))
@@ -230,6 +240,7 @@ struct AgentToastView: View {
                     .background(color.opacity(0.35), in: Capsule())
             }
             .buttonStyle(PressableStyle())
+            }
             Button { model.ai.focus(session) } label: {
                 Label("Go to session", systemImage: "terminal")
                     .font(.system(size: 17, weight: .semibold, design: .rounded))
@@ -261,7 +272,8 @@ struct AgentToastView: View {
     }
 }
 
-/// On a Plain display: the Needs-you Toast, in its own floating panel over other windows.
+/// On a Plain display or over a Remote view: this Mac's Toast, in its own floating panel over
+/// whatever is on the Edge (on a Plain display, only Needs-you).
 struct PlainDisplayToast: View {
     @EnvironmentObject var model: AppModel
 
@@ -269,6 +281,12 @@ struct PlainDisplayToast: View {
         if let session = model.ai.toastSessions.first {
             AgentToastView(session: session, more: model.ai.toastSessions.count - 1, floating: true)
                 .id(session.id)
+                .padding(AgentToastView.floatingMargin)
+                .fixedSize()
+                .preferredColorScheme(.dark)
+        } else if model.remoteHost.current != nil, let toast = model.notifications.toast {
+            // Over a Remote view, this Mac's Notifications still show (on a Plain display they don't).
+            ToastView(notification: toast)
                 .padding(AgentToastView.floatingMargin)
                 .fixedSize()
                 .preferredColorScheme(.dark)

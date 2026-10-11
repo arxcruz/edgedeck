@@ -516,7 +516,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
 
     private func updateToastPanel() {
         guard let toastPanel else { return }
-        let show = model.plainDisplay && model.edgeConnected && !model.ai.toastSessions.isEmpty
+        // Over a Plain display or a Remote view, this Mac's Toasts float above whatever is on the Edge.
+        let remote = model.remoteHost.current != nil && model.remoteHost.pairingCode == nil
+        let show = (model.plainDisplay || remote) && model.edgeConnected
+            && (!model.ai.toastSessions.isEmpty || (remote && model.notifications.toast != nil))
         guard show, let screen = targetScreen() else {
             if toastPanel.isVisible { toastPanel.orderOut(nil) }
             return

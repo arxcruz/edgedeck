@@ -36,6 +36,8 @@ enum RemoteWire {
         case touch
         /// Either way, twice a second: the other side is still there.
         case ping
+        /// Source → Host: `[editing]`, so the Host hides its Source pill over the Edit toolbar.
+        case state
     }
 
     enum HelloStatus: UInt8 {
