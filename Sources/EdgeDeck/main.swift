@@ -37,6 +37,12 @@ final class MenuAction: NSMenuItem {
 final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMenuDelegate {
     let model = AppModel()
     private var panel: EdgePanel!
+    /// Remote view: the Source's Dashboard, over this Mac's own on the Edge.
+    private var remotePanel: EdgePanel!
+    /// While a Host watches this Mac (the Source) and there's no Edge here: the size to draw the
+    /// Dashboard at, hidden behind the wallpaper.
+    private var remoteWatchSize: CGSize?
+    private var remoteItem: NSMenuItem!
     private var menuBarCover: EdgePanel!
     private var cancellables = Set<AnyCancellable>()
     private lazy var scrollRecognizer = ScrollSwipeRecognizer(model: model, swipe: model.swipe)
@@ -58,17 +64,39 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
     /// The dashboard's size on the Edge, so the preview lays out exactly the same.
     private var edgeSize = NSSize(width: 2560, height: 690)
 
+    private static let panelLevel = NSWindow.Level(rawValue: Int(CGWindowLevelForKey(.desktopIconWindow)) + 1)
+
     func applicationDidFinishLaunching(_ notification: Notification) {
         panel = EdgePanel(contentRect: .zero, styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
         // Just above the desktop: always visible on the Edge, but any window you
         // move there (e.g. Slack as the Guest app) sits on top of it.
-        panel.level = NSWindow.Level(rawValue: Int(CGWindowLevelForKey(.desktopIconWindow)) + 1)
+        panel.level = Self.panelLevel
         panel.collectionBehavior = [.canJoinAllSpaces, .stationary, .ignoresCycle, .fullScreenNone]
         panel.hidesOnDeactivate = false
         panel.isOpaque = true
         panel.backgroundColor = .black
         panel.hasShadow = false
         panel.contentView = FirstMouseHostingView(rootView: DashboardView().environmentObject(model).environmentObject(model.swipe))
+
+        remotePanel = EdgePanel(contentRect: .zero, styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
+        remotePanel.level = panel.level
+        remotePanel.collectionBehavior = panel.collectionBehavior
+        remotePanel.hidesOnDeactivate = false
+        remotePanel.isOpaque = true
+        remotePanel.backgroundColor = .black
+        remotePanel.hasShadow = false
+        remotePanel.contentView = RemoteStreamView(host: model.remoteHost)
+        model.remoteHost.$current
+            .removeDuplicates()
+            .dropFirst()
+            .sink { [weak self] _ in DispatchQueue.main.async { self?.placePanel() } }
+            .store(in: &cancellables)
+        model.remoteSource.onWatch = { [weak self] size in
+            guard let self else { return nil }
+            self.remoteWatchSize = size
+            self.placePanel()
+            return self.panel
+        }
 
         // Blank cover over the menu bar on the Edge only. It's opaque to clicks so taps
         // there don't open invisible menus.
@@ -180,6 +208,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
             var frame = screen.frame
             frame.size.height = screen.visibleFrame.maxY - screen.frame.minY
             panel.setFrame(frame, display: true)
+            panel.level = Self.panelLevel
+            model.remoteHost.dashboardSize = frame.size
             // visibleFrame excludes the menu bar shown on the Edge when displays have separate Spaces.
             model.guest.screenFrame = screen.visibleFrame
 
@@ -202,6 +232,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
                 hidePullTab()
                 panel.orderFrontRegardless()
             }
+            if model.remoteHost.current != nil && !model.plainDisplay {
+                remotePanel.setFrame(frame, display: true)
+                remotePanel.orderFrontRegardless()
+            } else {
+                remotePanel.orderOut(nil)
+            }
             model.edgeConnected = true
             previewWindow?.close()
         } else {
@@ -211,7 +247,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
             hidePullTab()
             panel.orderOut(nil)
             menuBarCover.orderOut(nil)
+            remotePanel.orderOut(nil)
             model.edgeConnected = false
+            if let size = remoteWatchSize, let screen = NSScreen.main {
+                // A Host is watching: draw the Dashboard behind the wallpaper, where it can be
+                // captured but not seen.
+                panel.level = NSWindow.Level(rawValue: Int(CGWindowLevelForKey(.desktopWindow)) - 1)
+                panel.setFrame(NSRect(origin: screen.frame.origin, size: size), display: true)
+                panel.orderFrontRegardless()
+            }
         }
         updateStatusItem()
     }
@@ -259,6 +303,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
         menu.addItem(previewItem)
         editItem = NSMenuItem(title: "Edit Layout", action: #selector(toggleEditing), keyEquivalent: "e")
         menu.addItem(editItem)
+        remoteItem = NSMenuItem(title: "Show on Edge", action: nil, keyEquivalent: "")
+        remoteItem.submenu = NSMenu()
+        menu.addItem(remoteItem)
         plainItem = NSMenuItem(title: "Use as Plain Display", action: #selector(togglePlainDisplay), keyEquivalent: "d")
         menu.addItem(plainItem)
         menu.addItem(NSMenuItem(title: "Open config.json", action: #selector(openConfig), keyEquivalent: ","))
@@ -294,6 +341,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
 
     func menuNeedsUpdate(_ menu: NSMenu) {
         if let submenu = touchItem.submenu { fillTouchMenu(submenu) }
+        if let submenu = remoteItem.submenu { fillRemoteMenu(submenu) }
         // Open at Login must point at one stable copy, which scripts/build.sh installs.
         let installed = Bundle.main.bundlePath.hasPrefix("/Applications/")
         switch SMAppService.mainApp.status {
@@ -314,6 +362,25 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
             NSLog("EdgeDeck: Open at Login failed: \(error)")
             if service.status == .requiresApproval { SMAppService.openSystemSettingsLoginItems() }
         }
+    }
+
+    // MARK: Remote view
+
+    /// Which Mac's Dashboard the Edge shows: this one, or a Source found on the network.
+    private func fillRemoteMenu(_ menu: NSMenu) {
+        let host = model.remoteHost
+        menu.removeAllItems()
+        menu.autoenablesItems = false
+        menu.addItem(MenuAction("This Mac", checked: host.current == nil) { host.end() })
+        for name in host.sources {
+            menu.addItem(MenuAction(name, checked: host.current == name) { host.show(name) })
+        }
+        if host.sources.isEmpty {
+            let none = MenuAction("No other Macs found") {}
+            none.isEnabled = false
+            menu.addItem(none)
+        }
+        remoteItem.isEnabled = model.edgeConnected
     }
 
     // MARK: Touch

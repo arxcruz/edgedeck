@@ -17,6 +17,8 @@ final class AppModel: ObservableObject {
     let ai = AIModel()
     let touch = TouchController()
     let swipe = SwipeState()
+    let remoteHost = RemoteHost()
+    let remoteSource = RemoteSource()
 
     /// Whether the Xeneon Edge is plugged in; set by the app delegate.
     @Published var edgeConnected = true
@@ -70,6 +72,16 @@ final class AppModel: ObservableObject {
         player.$isOpen
             .sink { [weak self] open in if open { self?.plainDisplay = false } }
             .store(in: &cancellables)
+        // A Takeover or a Plain display on the Host ends a Remote view.
+        guest.$current
+            .sink { [weak self] current in if current != nil { self?.remoteHost.end() } }
+            .store(in: &cancellables)
+        player.$isOpen
+            .sink { [weak self] open in if open { self?.remoteHost.end() } }
+            .store(in: &cancellables)
+        $plainDisplay
+            .sink { [weak self] plain in if plain { self?.remoteHost.end() } }
+            .store(in: &cancellables)
         ai.$sessions
             .sink { [weak self] _ in DispatchQueue.main.async { self?.finishAnswering() } }
             .store(in: &cancellables)
@@ -84,7 +96,7 @@ final class AppModel: ObservableObject {
         }
 
         // Forward nested changes so views observing the model refresh.
-        for publisher in [configStore.objectWillChange, touch.objectWillChange, notifications.objectWillChange, guest.objectWillChange, player.objectWillChange, ai.objectWillChange] {
+        for publisher in [configStore.objectWillChange, touch.objectWillChange, notifications.objectWillChange, guest.objectWillChange, player.objectWillChange, ai.objectWillChange, remoteHost.objectWillChange] {
             publisher.sink { [weak self] _ in self?.objectWillChange.send() }.store(in: &cancellables)
         }
 
@@ -107,6 +119,8 @@ final class AppModel: ObservableObject {
         music.start()
         ai.start()
         touch.start()
+        remoteHost.start()
+        remoteSource.start()
     }
 
     func requestAccessibility() {
