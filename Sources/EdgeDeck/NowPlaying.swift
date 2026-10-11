@@ -138,7 +138,10 @@ final class NowPlayingModel: ObservableObject {
 
         // Decode artwork only when it changes.
         let encoded = json["artwork"] as? String
-        let key = (json["artworkidentifier"] as? String) ?? encoded.map { "\($0.count):\($0.suffix(32))" }
+        // Music announces a track before its artwork is ready, then sends the artwork under the
+        // same identifier: whether data came along is part of the key.
+        let key = (json["artworkidentifier"] as? String).map { $0 + (encoded == nil ? "" : "+data") }
+            ?? encoded.map { "\($0.count):\($0.suffix(32))" }
         if key != artworkKey {
             artworkKey = key
             if let image = encoded.flatMap({ Data(base64Encoded: $0) }).flatMap({ NSImage(data: $0) }) {

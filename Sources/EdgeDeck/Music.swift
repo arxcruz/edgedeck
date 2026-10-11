@@ -57,6 +57,8 @@ final class MusicModel: ObservableObject {
     @Published private(set) var hasTrack = false
     @Published private(set) var currentPlaylist: String?
     @Published private(set) var artwork: [String: NSImage] = [:]
+    /// Something to tell the user, e.g. that Music couldn't play an album.
+    @Published private(set) var message: String?
 
     /// Helper playlist that albums are copied into to play them in order.
     static let queuePlaylist = "EdgeDeck"
@@ -69,7 +71,9 @@ final class MusicModel: ObservableObject {
     private var artworkRequested = Set<String>()
     private var lastDevicesRefresh = Date.distantPast
 
-    var isRunning: Bool { !NSRunningApplication.runningApplications(withBundleIdentifier: Self.bundleID).isEmpty }
+    var isRunning: Bool {
+        NSRunningApplication.runningApplications(withBundleIdentifier: Self.bundleID).contains { !$0.isTerminated }
+    }
 
     func start() {
         Timer.scheduledTimer(withTimeInterval: 2, repeats: true) { [weak self] _ in self?.poll() }
@@ -104,6 +108,7 @@ final class MusicModel: ObservableObject {
 
     func play(_ playlist: Playlist) {
         command("play (first playlist whose persistent ID is \(Self.quote(playlist.id)))")
+        checkStarted("“\(playlist.name)”")
     }
 
     func play(_ album: Album) {
@@ -121,6 +126,18 @@ final class MusicModel: ObservableObject {
         end repeat
         play q
         """)
+        checkStarted("“\(album.name)”")
+    }
+
+    /// Music silently does nothing for tracks it can't play (e.g. an old purchase this Mac
+    /// isn't authorized for), so say so if nothing is playing shortly after.
+    private func checkStarted(_ what: String) {
+        DispatchQueue.main.asyncAfter(deadline: .now() + 2) { [weak self] in
+            self?.run("return player state as text") { result in
+                guard result?.stringValue != "playing" else { return }
+                self?.message = "Music couldn't play \(what) — its tracks may be unavailable on this Mac"
+            }
+        }
     }
 
     func shuffleAll() {
@@ -310,10 +327,22 @@ final class MusicModel: ObservableObject {
     }
 
     /// Runs `body` inside `tell application "Music"` and hands the result to the main queue.
+    /// Never launches Music: scripts still queued (artwork, polls) when Music quits would
+    /// otherwise reopen it, so each one checks right before it talks to Music.
     private func run(_ body: String, completion: @escaping (NSAppleEventDescriptor?) -> Void) {
-        let source = "tell application id \"\(Self.bundleID)\"\n\(body)\nend tell"
+        let source = """
+        if application id "\(Self.bundleID)" is running then
+        tell application id "\(Self.bundleID)"
+        \(body)
+        end tell
+        end if
+        """
         queue.async { [weak self] in
             guard let self else { return }
+            guard self.isRunning else {
+                DispatchQueue.main.async { completion(nil) }
+                return
+            }
             let script = compiled[source] ?? {
                 let s = NSAppleScript(source: source)!
                 self.compiled[source] = s

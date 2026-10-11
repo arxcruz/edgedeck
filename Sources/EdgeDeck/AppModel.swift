@@ -46,6 +46,11 @@ final class AppModel: ObservableObject {
 
         ai.learnedProfile = { [weak self] path in self?.addClaudeDir(path) }
 
+        music.$message
+            .compactMap { $0 }
+            .sink { [weak self] text in self?.flashPlayerMessage(text) }
+            .store(in: &cancellables)
+
         notifications.suppressesToast = { [weak self] notification in
             self?.ai.needingYouTerminals.contains(notification.app.lowercased()) ?? false
         }
