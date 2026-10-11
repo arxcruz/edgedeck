@@ -46,6 +46,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
     private var previewItem: NSMenuItem!
     private var loginItem: NSMenuItem!
     private var touchItem: NSMenuItem!
+    private var plainItem: NSMenuItem!
+    /// On a Plain display: the pull-tab hint at the right edge, shown for a few seconds.
+    private var pullTab: EdgePanel!
+    private var pullTabHide: DispatchWorkItem?
+    /// On a Plain display: Needs-you Toasts float over whatever windows are on the Edge.
+    private var toastPanel: EdgePanel!
     /// The dashboard in a window on the main display, for looking and editing while the Edge
     /// isn't connected. Opened from the menu only.
     private var previewWindow: NSWindow?
@@ -86,6 +92,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
         }
 
         setUpStatusItem()
+        // Before the first placePanel: starting on a Plain display shows the pull tab at once.
+        setUpPlainDisplayPanels()
         placePanel()
         NotificationCenter.default.addObserver(self, selector: #selector(placePanel),
                                                name: NSApplication.didChangeScreenParametersNotification, object: nil)
@@ -97,6 +105,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
             .store(in: &cancellables)
 
         model.touch.onEdgetapFound = { [weak self] in self?.edgetapFound() }
+        model.$plainDisplay
+            .removeDuplicates()
+            .dropFirst()
+            .sink { [weak self] _ in DispatchQueue.main.async { self?.placePanel() } }
+            .store(in: &cancellables)
+        // Needs-you Toasts follow the AI state; checked whenever the model changes.
+        model.objectWillChange
+            .sink { [weak self] _ in DispatchQueue.main.async { self?.updateToastPanel() } }
+            .store(in: &cancellables)
         model.start()
 
         // Touch swipes arrive as scroll gestures (see ScrollSwipeRecognizer).
@@ -130,16 +147,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
     }
 
     private func snapshot(to path: String) {
-        guard let view = panel.contentView,
-              let rep = view.bitmapImageRepForCachingDisplay(in: view.bounds) else { return }
-        view.cacheDisplay(in: view.bounds, to: rep)
-        try? rep.representation(using: .png, properties: [:])?.write(to: URL(fileURLWithPath: path))
+        if let view = panel.contentView, let rep = view.bitmapImageRepForCachingDisplay(in: view.bounds) {
+            view.cacheDisplay(in: view.bounds, to: rep)
+            try? rep.representation(using: .png, properties: [:])?.write(to: URL(fileURLWithPath: path))
+        }
         if let view = previewWindow?.contentView, let rep = view.bitmapImageRepForCachingDisplay(in: view.bounds) {
             view.cacheDisplay(in: view.bounds, to: rep)
             try? rep.representation(using: .png, properties: [:])?.write(to: URL(fileURLWithPath: (path as NSString).deletingPathExtension + "-preview.png"))
         }
         if model.player.isOpen {
             model.player.snapshot(to: (path as NSString).deletingPathExtension + "-player.png")
+        }
+        // The floating Needs-you Toast on a Plain display.
+        if toastPanel.isVisible, let view = toastPanel.contentView, let rep = view.bitmapImageRepForCachingDisplay(in: view.bounds) {
+            view.cacheDisplay(in: view.bounds, to: rep)
+            try? rep.representation(using: .png, properties: [:])?.write(to: URL(fileURLWithPath: (path as NSString).deletingPathExtension + "-toast.png"))
         }
     }
 
@@ -171,13 +193,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
             }
             edgeSize = frame.size
             model.touch.display = (screen.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? NSNumber)?.uint32Value
-            panel.orderFrontRegardless()
+            if model.plainDisplay {
+                // A normal monitor: no Dashboard and no cover over the Edge's menu bar.
+                panel.orderOut(nil)
+                menuBarCover.orderOut(nil)
+                showPullTab(on: screen)
+            } else {
+                hidePullTab()
+                panel.orderFrontRegardless()
+            }
             model.edgeConnected = true
             previewWindow?.close()
         } else {
             // No Edge: nothing on screen until it's plugged in (or the preview is opened).
             model.guest.screenFrame = .zero
             model.touch.display = nil
+            hidePullTab()
             panel.orderOut(nil)
             menuBarCover.orderOut(nil)
             model.edgeConnected = false
@@ -228,6 +259,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
         menu.addItem(previewItem)
         editItem = NSMenuItem(title: "Edit Layout", action: #selector(toggleEditing), keyEquivalent: "e")
         menu.addItem(editItem)
+        plainItem = NSMenuItem(title: "Use as Plain Display", action: #selector(togglePlainDisplay), keyEquivalent: "d")
+        menu.addItem(plainItem)
         menu.addItem(NSMenuItem(title: "Open config.json", action: #selector(openConfig), keyEquivalent: ","))
         menu.addItem(NSMenuItem(title: "Reload Config", action: #selector(reloadConfig), keyEquivalent: "r"))
         menu.addItem(NSMenuItem(title: "Send Back Guest App", action: #selector(sendBack), keyEquivalent: "u"))
@@ -245,6 +278,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
         statusItem.menu = menu
 
         model.$editing.sink { [weak self] editing in self?.editItem.state = editing ? .on : .off }.store(in: &cancellables)
+        model.$plainDisplay.sink { [weak self] plain in self?.plainItem.state = plain ? .on : .off }.store(in: &cancellables)
     }
 
     /// The menu bar icon and menu say whether the Edge is connected.
@@ -350,6 +384,64 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
     }
 
     @objc private func toggleEditing() { model.editing.toggle() }
+    @objc private func togglePlainDisplay() { model.plainDisplay.toggle() }
+
+    // MARK: Plain display
+
+    private func setUpPlainDisplayPanels() {
+        func floatingPanel() -> EdgePanel {
+            let panel = EdgePanel(contentRect: .zero, styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
+            panel.level = .statusBar
+            panel.collectionBehavior = [.canJoinAllSpaces, .stationary, .ignoresCycle, .fullScreenAuxiliary]
+            panel.hidesOnDeactivate = false
+            panel.isOpaque = false
+            panel.backgroundColor = .clear
+            panel.hasShadow = false
+            return panel
+        }
+        pullTab = floatingPanel()
+        pullTab.contentView = FirstMouseHostingView(rootView: PullTab { [weak self] in self?.model.plainDisplay = false })
+        toastPanel = floatingPanel()
+        toastPanel.contentView = FirstMouseHostingView(rootView: PlainDisplayToast().environmentObject(model))
+    }
+
+    /// The hint that the Dashboard is a swipe away; fades after a few seconds so it never
+    /// covers windows for good.
+    private func showPullTab(on screen: NSScreen) {
+        let size = NSSize(width: 44, height: 160)
+        pullTab.setFrame(NSRect(x: screen.frame.maxX - size.width, y: screen.visibleFrame.midY - size.height / 2,
+                                width: size.width, height: size.height), display: true)
+        pullTab.alphaValue = 1
+        pullTab.orderFrontRegardless()
+        pullTabHide?.cancel()
+        let hide = DispatchWorkItem { [weak self] in
+            NSAnimationContext.runAnimationGroup({ $0.duration = 0.6; self?.pullTab.animator().alphaValue = 0 }) {
+                self?.pullTab.orderOut(nil)
+            }
+        }
+        pullTabHide = hide
+        DispatchQueue.main.asyncAfter(deadline: .now() + 4, execute: hide)
+    }
+
+    private func hidePullTab() {
+        pullTabHide?.cancel()
+        pullTab?.orderOut(nil)
+    }
+
+    private func updateToastPanel() {
+        guard let toastPanel else { return }
+        let show = model.plainDisplay && model.edgeConnected && !model.ai.toastSessions.isEmpty
+        guard show, let screen = targetScreen() else {
+            if toastPanel.isVisible { toastPanel.orderOut(nil) }
+            return
+        }
+        // As big as the Toast plus room for its shadow, so the shadow is never cut off.
+        let size = toastPanel.contentView?.fittingSize ?? NSSize(width: 824, height: 150)
+        let margin = AgentToastView.floatingMargin
+        toastPanel.setFrame(NSRect(x: screen.visibleFrame.midX - size.width / 2, y: screen.visibleFrame.maxY - size.height + margin - 8,
+                                   width: size.width, height: size.height), display: true)
+        if !toastPanel.isVisible { toastPanel.orderFrontRegardless() }
+    }
     @objc private func openConfig() { model.openConfigFile() }
     @objc private func reloadConfig() { model.configStore.reload() }
     @objc private func sendBack() { model.guest.sendBack() }

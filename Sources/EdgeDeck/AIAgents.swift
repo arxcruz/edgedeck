@@ -519,6 +519,59 @@ final class AIModel: ObservableObject {
         terminal(of: session)?.activate()
     }
 
+    /// Selects the terminal tab a Session runs in (iTerm2 and Terminal know each tab's tty), so
+    /// its window is the terminal's front one. Other terminals keep whatever window is in front.
+    func selectTerminalTab(of session: AgentSession) {
+        guard let pid = session.pid, let tty = Self.tty(of: pid), let app = terminal(of: session) else { return }
+        let script: String
+        switch app.bundleIdentifier {
+        case "com.googlecode.iterm2":
+            script = """
+            tell application id "com.googlecode.iterm2"
+                repeat with w in windows
+                    repeat with t in tabs of w
+                        repeat with s in sessions of t
+                            if tty of s is "\(tty)" then
+                                select w
+                                tell t to select
+                                tell s to select
+                                return
+                            end if
+                        end repeat
+                    end repeat
+                end repeat
+            end tell
+            """
+        case "com.apple.Terminal":
+            script = """
+            tell application id "com.apple.Terminal"
+                repeat with w in windows
+                    repeat with t in tabs of w
+                        if tty of t is "\(tty)" then
+                            set selected of t to true
+                            set index of w to 1
+                            return
+                        end if
+                    end repeat
+                end repeat
+            end tell
+            """
+        default:
+            return
+        }
+        var error: NSDictionary?
+        NSAppleScript(source: script)?.executeAndReturnError(&error)
+        if let error { NSLog("EdgeDeck: couldn't select the session's tab: \(error)") }
+    }
+
+    /// "/dev/ttys003" for a process attached to a terminal.
+    static func tty(of pid: pid_t) -> String? {
+        var info = proc_bsdinfo()
+        guard proc_pidinfo(pid, PROC_PIDTBSDINFO, 0, &info, Int32(MemoryLayout<proc_bsdinfo>.size)) > 0,
+              info.e_tdev != UInt32.max, let name = devname(dev_t(bitPattern: info.e_tdev), S_IFCHR) else { return nil }
+        return "/dev/" + String(cString: name)
+    }
+
     /// The app (usually a terminal) a Session's process runs under.
     func terminal(of session: AgentSession) -> NSRunningApplication? {
         guard var pid = session.pid else { return nil }

@@ -124,12 +124,13 @@ struct DashboardView: View {
         DragGesture(minimumDistance: 25)
             .onChanged { value in
                 let dx = value.translation.width
-                guard abs(dx) > abs(value.translation.height) else { return }
+                guard !swipe.heldByControl, abs(dx) > abs(value.translation.height) else { return }
                 // Rubber-band past the first/last page.
                 let atEdge = (current == 0 && dx > 0) || (current == pageCount - 1 && dx < 0)
                 swipe.offset = atEdge ? dx / 4 : dx
             }
             .onEnded { value in
+                guard !swipe.heldByControl else { return }
                 let dx = value.predictedEndTranslation.width
                 let horizontal = abs(value.translation.width) > abs(value.translation.height)
                 if horizontal && dx < -width * 0.2 {
@@ -192,6 +193,9 @@ struct AgentToastView: View {
     let session: AgentSession
     /// Other Sessions that also Need you.
     let more: Int
+    /// Floating over other apps' windows (Plain display): a solid tile and a tighter shadow,
+    /// since there's no Dashboard behind it to blur.
+    var floating = false
 
     var body: some View {
         let color = Color(hex: session.state.color)
@@ -216,11 +220,21 @@ struct AgentToastView: View {
             }
             .lineLimit(1)
             Spacer(minLength: 0)
+            // Bring to Edge: answer it here when the Mac's own screen isn't in front of you.
+            Button { model.bringToEdge(session) } label: {
+                Label("Bring to Edge", systemImage: "rectangle.portrait.and.arrow.right")
+                    .font(.system(size: 17, weight: .semibold, design: .rounded))
+                    .foregroundStyle(.white)
+                    .padding(.horizontal, 18)
+                    .frame(height: 56)
+                    .background(color.opacity(0.35), in: Capsule())
+            }
+            .buttonStyle(PressableStyle())
             Button { model.ai.focus(session) } label: {
                 Label("Go to session", systemImage: "terminal")
                     .font(.system(size: 17, weight: .semibold, design: .rounded))
                     .foregroundStyle(.black)
-                    .padding(.horizontal, 20)
+                    .padding(.horizontal, 18)
                     .frame(height: 56)
                     .background(Color.white, in: Capsule())
             }
@@ -228,16 +242,56 @@ struct AgentToastView: View {
             TouchButton(symbol: "xmark", tint: Theme.secondaryText, size: 48) { model.dismissAgentToast() }
         }
         .padding(14)
-        .frame(width: 760)
-        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 26, style: .continuous))
+        .frame(width: 900)
+        .background {
+            let shape = RoundedRectangle(cornerRadius: 26, style: .continuous)
+            if floating { shape.fill(Theme.tile) } else { shape.fill(.ultraThinMaterial) }
+        }
         .overlay(RoundedRectangle(cornerRadius: 26, style: .continuous).stroke(color.opacity(0.8), lineWidth: 1.5))
-        .shadow(color: .black.opacity(0.6), radius: 30)
+        .shadow(color: .black.opacity(floating ? 0.45 : 0.6), radius: floating ? 12 : 30, y: floating ? 4 : 0)
     }
+
+    /// Room around a floating Toast for its shadow to fade out inside its window.
+    static let floatingMargin: CGFloat = 32
 
     private var detail: String {
         let project = session.project.isEmpty ? "A session" : session.project
         if case .needsYou(let tool?) = session.state { return "\(project) — wants to run \(tool)" }
         return "\(project) — needs your input"
+    }
+}
+
+/// On a Plain display: the Needs-you Toast, in its own floating panel over other windows.
+struct PlainDisplayToast: View {
+    @EnvironmentObject var model: AppModel
+
+    var body: some View {
+        if let session = model.ai.toastSessions.first {
+            AgentToastView(session: session, more: model.ai.toastSessions.count - 1, floating: true)
+                .id(session.id)
+                .padding(AgentToastView.floatingMargin)
+                .fixedSize()
+                .preferredColorScheme(.dark)
+        }
+    }
+}
+
+/// On a Plain display: a tab at the right edge, briefly, saying the Dashboard is a swipe away.
+struct PullTab: View {
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            Image(systemName: "chevron.compact.left")
+                .font(.system(size: 26, weight: .bold))
+                .foregroundStyle(.white.opacity(0.9))
+                .frame(width: 36, height: 150)
+                .background(Color.black.opacity(0.55), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(PressableStyle())
+        .gesture(DragGesture(minimumDistance: 20).onEnded { if $0.translation.width < -40 { action() } })
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .trailing)
     }
 }
 
@@ -253,7 +307,15 @@ struct Rail: View {
                     .font(.system(size: 14, weight: .semibold, design: .rounded))
                     .lineLimit(1)
                     .minimumScaleFactor(0.6)
-                RailButton(title: "Activate", symbol: "hand.tap") { model.guest.activate() }
+                if model.answeringSession != nil {
+                    // Claude Code's permission prompt, answered without the keyboard.
+                    let orange = Color(hex: AgentState.needsYou(nil).color)
+                    RailButton(title: "Yes", symbol: "checkmark", tint: Color(hex: "#30D158")) { model.answer("1") }
+                    RailButton(title: "Always", symbol: "checkmark.seal", tint: orange) { model.answer("2") }
+                    RailButton(title: "No", symbol: "xmark", tint: Color(hex: "#FF453A")) { model.answer("escape") }
+                } else {
+                    RailButton(title: "Activate", symbol: "hand.tap") { model.guest.activate() }
+                }
                 RailButton(title: "Send back", symbol: "arrow.uturn.backward") { model.guest.sendBack() }
             } else if model.player.isOpen {
                 AppIcon(image: model.player.source?.icon, size: 52).padding(.top, 8)

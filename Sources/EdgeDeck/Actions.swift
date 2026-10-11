@@ -12,6 +12,9 @@ struct ActionResult {
 
 /// Executes the actions bound to launcher buttons.
 enum ActionRunner {
+    /// Turns the Dashboard off (the Plain display Action); set by the app model.
+    static var showPlainDisplay: () -> Void = {}
+
     static func run(_ action: ActionConfig, guest: GuestAppManager, completion: ((ActionResult) -> Void)? = nil) {
         let done = completion ?? { _ in }
         switch action.type {
@@ -39,6 +42,9 @@ enum ActionRunner {
             }
             guard guest.screenFrame != .zero else { return done(ActionResult(ok: false, message: "The Edge isn't connected")) }
             guest.bringToEdge(action.value)
+            done(ActionResult(ok: true))
+        case .plainDisplay:
+            showPlainDisplay()
             done(ActionResult(ok: true))
         }
     }
@@ -155,9 +161,10 @@ enum AppLocator {
 /// Posts keyboard shortcuts ("cmd+shift+4") and media keys ("playpause") to the frontmost app.
 /// Needs the Accessibility permission.
 enum KeySender {
-    /// Returns false when the spec names an unknown key.
+    /// Returns false when the spec names an unknown key. With `pid`, the key goes to that app
+    /// only, even if it isn't frontmost.
     @discardableResult
-    static func send(_ spec: String) -> Bool {
+    static func send(_ spec: String, to pid: pid_t? = nil) -> Bool {
         let parts = spec.lowercased().split(separator: "+").map { $0.trimmingCharacters(in: .whitespaces) }
         guard let keyName = parts.last else { return false }
 
@@ -186,7 +193,7 @@ enum KeySender {
         for down in [true, false] {
             let event = CGEvent(keyboardEventSource: source, virtualKey: keyCode, keyDown: down)
             event?.flags = flags
-            event?.post(tap: .cghidEventTap)
+            if let pid { event?.postToPid(pid) } else { event?.post(tap: .cghidEventTap) }
         }
         return true
     }

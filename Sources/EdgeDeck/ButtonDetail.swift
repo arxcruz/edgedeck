@@ -14,6 +14,7 @@ struct ButtonDetail: View {
     /// The Action kinds as the Button view offers them: Open and Bring to Edge are one "App" choice.
     enum Kind: String, CaseIterable, Identifiable {
         case app = "App", url = "URL", shortcut = "Shortcut", keys = "Keys", shell = "Shell", appleScript = "AppleScript"
+        case plainDisplay = "Plain Display"
         var id: String { rawValue }
 
         init(_ type: ActionConfig.Kind) {
@@ -24,6 +25,7 @@ struct ButtonDetail: View {
             case .keys: self = .keys
             case .shell: self = .shell
             case .appleScript: self = .appleScript
+            case .plainDisplay: self = .plainDisplay
             }
         }
     }
@@ -255,6 +257,7 @@ struct ButtonDetail: View {
             case .keys: keysInput
             case .shell: scriptInput(text: $shellText, field: .shell, hint: "Runs with zsh -lc. Exit status 0 means it worked.")
             case .appleScript: scriptInput(text: $scriptText, field: .appleScript, hint: "Runs with osascript.")
+            case .plainDisplay: hint("Turns the Dashboard off so the Edge is a normal monitor (touch keeps working). Swipe in from the Edge's right edge to bring it back.")
             }
         }
         .onChange(of: urlText) { _, _ in commit() }
@@ -272,6 +275,7 @@ struct ButtonDetail: View {
         case .keys: .init(type: .keys, value: keysText.trimmingCharacters(in: .whitespaces).lowercased())
         case .shell: .init(type: .shell, value: shellText)
         case .appleScript: .init(type: .appleScript, value: scriptText)
+        case .plainDisplay: .init(type: .plainDisplay, value: "on")
         }
         return action.value.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? nil : action
     }

@@ -17,6 +17,7 @@ enum ButtonDefaults {
         case .keys: return value.isEmpty ? "" : KeySender.display(value)
         case .shell: return "Shell"
         case .appleScript: return "AppleScript"
+        case .plainDisplay: return "Plain Display"
         }
     }
 
@@ -49,6 +50,7 @@ enum ButtonDefaults {
             }
         case .shell: "terminal"
         case .appleScript: "applescript"
+        case .plainDisplay: "display"
         }
     }
 

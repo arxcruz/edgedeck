@@ -76,6 +76,8 @@ struct ActionConfig: Codable, Hashable {
         case appleScript
         /// value: same as openApp; brings the app's front window to the Edge as the Guest app.
         case bringToEdge
+        /// value: unused. Turns the Dashboard off: the Edge becomes a Plain display.
+        case plainDisplay
 
         init(from decoder: Decoder) throws {
             let raw = try decoder.singleValueContainer().decode(String.self)

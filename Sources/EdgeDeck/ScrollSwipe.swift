@@ -11,6 +11,8 @@ extension Notification.Name {
 /// Kept out of AppModel so a swipe doesn't re-render everything observing the model.
 final class SwipeState: ObservableObject {
     @Published var offset: CGFloat = 0
+    /// A control (e.g. a slider) owns the current drag, so it mustn't change pages.
+    var heldByControl = false
 }
 
 /// Turns scroll-wheel gestures into swipes.

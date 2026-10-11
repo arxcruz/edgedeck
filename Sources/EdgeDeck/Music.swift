@@ -768,6 +768,7 @@ private struct ToggleIcon: View {
 /// Horizontal slider for touch: tap anywhere to jump there, or hold and drag. Commits
 /// on release so Music isn't sent a command per pixel.
 struct TouchSlider: View {
+    @EnvironmentObject var swipe: SwipeState
     let value: Double
     let tint: Color
     let onCommit: (Double) -> Void
@@ -786,8 +787,13 @@ struct TouchSlider: View {
             .frame(maxHeight: .infinity)
             .contentShape(Rectangle())
             .gesture(DragGesture(minimumDistance: 0)
-                .onChanged { drag.value = min(max($0.location.x / geo.size.width, 0), 1) }
+                .onChanged {
+                    swipe.heldByControl = true
+                    drag.value = min(max($0.location.x / geo.size.width, 0), 1)
+                }
                 .onEnded { g in
+                    // After the page swipe has seen this drag end too (their order isn't fixed).
+                    DispatchQueue.main.async { swipe.heldByControl = false }
                     let v = min(max(g.location.x / geo.size.width, 0), 1)
                     drag.value = nil
                     onCommit(v)

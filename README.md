@@ -26,8 +26,8 @@ The build is ad-hoc signed, so macOS treats every rebuild as a new app and you
 have to re-enable Accessibility after rebuilding. To avoid that, sign with a
 stable identity: `SIGN_IDENTITY="Your Cert Name" ./scripts/build.sh`.
 
-The menu bar icon has Edit Layout, Open config.json, Reload, Send Back Guest App,
-**Touch** settings, **Open at Login** and Quit. Open at Login works for the copy in `/Applications`.
+The menu bar icon has Edit Layout, **Use as Plain Display**, Open config.json, Reload,
+Send Back Guest App, **Touch** settings, **Open at Login** and Quit. Open at Login works for the copy in `/Applications`.
 
 ## Touch
 
@@ -55,6 +55,18 @@ it's granted. The menu bar's **Touch** submenu turns it on or off (off hands the
 touchscreen back to macOS) and has scroll speed, reverse direction, momentum, flick
 acceleration, the hold time and hiding the cursor. If the old Edgetap app is
 running, EdgeDeck offers to quit it, since only one app can hold the touchscreen.
+
+### Plain display
+
+To use the Edge as a normal monitor, turn the dashboard off: **Use as Plain Display**
+in the menu bar (⌘D while the menu is open), or a launcher button with the **Plain
+Display** action (it's in the editor's Controls). Touch keeps working on whatever
+windows you put there. **Swipe in from the Edge's right edge** to bring the dashboard
+back (a small tab at that edge reminds you for a few seconds), or use the menu again.
+EdgeDeck remembers it across restarts. While the Edge is a plain display, a session
+that **Needs you** still pops its toast over your windows (notification toasts
+don't), and bringing an app or video to the Edge turns the dashboard back on so the
+strip with **Send back** is there.
 
 The touchscreen reports a single finger, so there are no two-finger gestures. The
 hardware notes and `touch-probe` (`swift run touch-probe [--seize]`, dumps the
@@ -244,7 +256,13 @@ exactly what was added and restores your statusline command.
 (`"ai": { "opencodeDatabase": "…" }` overrides OpenCode's database path.)
 
 When a session **Needs you**, a Toast drops in on the Edge (whatever Page you're
-on) with **Go to session**; it stays until the session moves on or you tap ✕. While
+on) with **Go to session**; it stays until the session moves on or you tap ✕.
+**Bring to Edge** on the Toast moves that session's terminal tab (iTerm2 and Terminal;
+other terminals: their front window) onto the Edge, and the strip on the right offers
+**Yes / Always / No** — Claude Code's `1` / `2` / Esc, sent to that terminal only — so you
+can answer without the Mac's keyboard or screen (handy when a KVM has them on another
+Mac). Once it no longer needs you, the terminal goes back and the Edge returns to how it
+was. While
 a Guest app or the Edge player covers the Dashboard, an orange **Needs you** button
 on the Rail stands in for it. Your terminal's own "needs your permission"
 notification gets no second Toast. Turn it off in the widget's Connect view

@@ -104,6 +104,9 @@ final class TouchController: ObservableObject {
     }
     /// Called (once per launch) when the old Edgetap app turns out to be running.
     var onEdgetapFound: () -> Void = {}
+    /// While the Edge is a Plain display, a swipe in from its right edge calls `onEdgeSwipe`.
+    var plainDisplay = false
+    var onEdgeSwipe: () -> Void = {}
 
     private let engine = GestureEngine()
     private let output = TouchOutput()
@@ -118,6 +121,12 @@ final class TouchController: ObservableObject {
     private var ownWindow: NSWindow?
     private var lastOwnPoint = CGPoint.zero
     private var lastOwnTap: (point: CGPoint, time: TimeInterval, count: Int)?
+    /// A touch that started at the Edge's right edge on a Plain display: where it started,
+    /// and whether it already brought the Dashboard back.
+    private var edgeSwipe: (start: Point, done: Bool)?
+    private static let edgeZone = 28.0, edgeSwipeDistance = 120.0
+    /// A touch that landed on another app's title bar: it drags the window straight away.
+    private var titleBarDrag = false
 
     func start() {
         input.onReport = { [weak self] in self?.handle($0) }
@@ -195,7 +204,44 @@ final class TouchController: ObservableObject {
                 return
             }
             ownWindow = nil
+            if plainDisplay, local.x >= bounds.width - Self.edgeZone {
+                edgeSwipe = (local, false)
+                return
+            }
             if caughtCoast { engine.suppressCurrentTap() }   // catching coasting content shouldn't also click
+            // On a title bar there's nothing to scroll, so a drag moves the window at once,
+            // without the rest the gesture engine needs.
+            if Self.isTitleBar(at: global) {
+                titleBarDrag = true
+                output.perform(.dragBegin(local), origin: bounds.origin)
+                return
+            }
+        }
+
+        if titleBarDrag {
+            if report.down {
+                output.perform(.dragMove(local), origin: bounds.origin)
+            } else {
+                output.perform(.dragEnd(local), origin: bounds.origin)
+                titleBarDrag = false
+            }
+            return
+        }
+
+        if let swipe = edgeSwipe {
+            if report.down {
+                if !swipe.done, swipe.start.x - local.x >= Self.edgeSwipeDistance {
+                    edgeSwipe?.done = true
+                    onEdgeSwipe()
+                }
+            } else {
+                edgeSwipe = nil
+                // A plain tap at the edge still belongs to the window there.
+                if !swipe.done, abs(local.x - swipe.start.x) < 16, abs(local.y - swipe.start.y) < 16 {
+                    output.perform(.click(swipe.start, count: 1), origin: bounds.origin)
+                }
+            }
+            return
         }
 
         if let window = ownWindow {
@@ -221,9 +267,30 @@ final class TouchController: ObservableObject {
             ownWindow = nil
         }
         wasDown = false
+        edgeSwipe = nil
+        if titleBarDrag {
+            titleBarDrag = false
+            output.perform(.dragEnd(Point(0, 0)), origin: display.map { CGDisplayBounds($0).origin } ?? .zero)
+        }
         output.stopMomentum()
         let origin = display.map { CGDisplayBounds($0).origin } ?? .zero
         for action in engine.cancel() { output.perform(action, origin: origin) }
+    }
+
+    /// Whether `point` (global, top-left origin) is in the title-bar strip of the frontmost
+    /// app window there.
+    private static func isTitleBar(at point: CGPoint) -> Bool {
+        let windows = CGWindowListCopyWindowInfo([.optionOnScreenOnly, .excludeDesktopElements], kCGNullWindowID) as? [[String: Any]] ?? []
+        let pid = ProcessInfo.processInfo.processIdentifier
+        for info in windows {
+            guard let bounds = (info[kCGWindowBounds as String] as? NSDictionary).flatMap({ CGRect(dictionaryRepresentation: $0) }),
+                  bounds.contains(point) else { continue }
+            // The frontmost window under the finger decides; menu bars, panels and the like aren't title bars.
+            guard (info[kCGWindowLayer as String] as? Int) == 0,
+                  (info[kCGWindowOwnerPID as String] as? pid_t) != pid else { return false }
+            return point.y - bounds.minY <= 30
+        }
+        return false
     }
 
     /// EdgeDeck's window on top at `point` (global, top-left origin), if the topmost window there is ours.

@@ -24,6 +24,20 @@ final class AppModel: ObservableObject {
         didSet { if !editing { endTyping() } }
     }
     @Published private(set) var currentPageIndex = 0
+    /// The Dashboard is off and the Edge is used as a normal monitor (touch still works).
+    /// Remembered across launches.
+    @Published var plainDisplay = UserDefaults.standard.bool(forKey: "plainDisplay") {
+        didSet {
+            UserDefaults.standard.set(plainDisplay, forKey: "plainDisplay")
+            touch.plainDisplay = plainDisplay
+            if plainDisplay {
+                editing = false
+                cityEditorWidgetID = nil
+                launcherEditorWidgetID = nil
+                ai.connectEditorOpen = false
+            }
+        }
+    }
     @Published private(set) var accessibilityGranted = AXIsProcessTrusted()
 
     private var cancellables = Set<AnyCancellable>()
@@ -46,6 +60,19 @@ final class AppModel: ObservableObject {
             .store(in: &cancellables)
 
         ai.learnedProfile = { [weak self] path in self?.addClaudeDir(path) }
+        touch.plainDisplay = plainDisplay
+        touch.onEdgeSwipe = { [weak self] in self?.plainDisplay = false }
+        ActionRunner.showPlainDisplay = { [weak self] in self?.plainDisplay = true }
+        // Bringing something to the Edge ends a Plain display, so its Rail (and Send back) show.
+        guest.$current
+            .sink { [weak self] current in if current != nil { self?.plainDisplay = false } }
+            .store(in: &cancellables)
+        player.$isOpen
+            .sink { [weak self] open in if open { self?.plainDisplay = false } }
+            .store(in: &cancellables)
+        ai.$sessions
+            .sink { [weak self] _ in DispatchQueue.main.async { self?.finishAnswering() } }
+            .store(in: &cancellables)
 
         music.$message
             .compactMap { $0 }
@@ -122,6 +149,55 @@ final class AppModel: ObservableObject {
         let terminals = ai.needingYouTerminals
         ai.dismissToast()
         if let toast = notifications.toast, terminals.contains(toast.app.lowercased()) { notifications.dismissToast() }
+    }
+
+    // MARK: Answering a Session on the Edge
+
+    /// A Session brought to the Edge from its Needs-you Toast to be answered there, and whether
+    /// the Edge was a Plain display before. Once it stops needing you, it's sent back.
+    private var answering: (sessionID: String, terminalPID: pid_t, wasPlain: Bool, since: Date)?
+
+    /// Brings the terminal tab of a Session that Needs you onto the Edge as the Guest app.
+    func bringToEdge(_ session: AgentSession) {
+        guard let app = ai.terminal(of: session) else { return }
+        let wasPlain = plainDisplay
+        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+            self?.ai.selectTerminalTab(of: session)
+            DispatchQueue.main.async {
+                guard let self else { return }
+                self.answering = (session.id, app.processIdentifier, wasPlain, Date())
+                self.guest.bringToEdgeWhenReady(app)
+            }
+        }
+    }
+
+    /// The Session the Guest app is answering, while it still Needs you.
+    var answeringSession: AgentSession? {
+        guard let answering, guest.current?.pid == answering.terminalPID else { return nil }
+        return ai.sessions.first { $0.id == answering.sessionID && $0.state.needsYou }
+    }
+
+    /// Answers a permission prompt with Claude Code's keys: "1" yes, "2" yes and don't ask
+    /// again, "escape" no. Sent to the terminal only, so nothing else gets the key.
+    func answer(_ key: String) {
+        guard let answering else { return }
+        KeySender.send(key, to: answering.terminalPID)
+    }
+
+    /// Sends the terminal back once its Session stops needing you, and returns the Edge to
+    /// what it was (e.g. a Plain display).
+    private func finishAnswering() {
+        guard let current = answering else { return }
+        guard guest.current?.pid == current.terminalPID else {
+            // Still on its way to the Edge, or sent back by hand / replaced since.
+            if Date().timeIntervalSince(current.since) > 5 { answering = nil }
+            return
+        }
+        let stillNeeds = ai.sessions.contains { $0.id == current.sessionID && $0.state.needsYou }
+        guard !stillNeeds else { return }
+        answering = nil
+        guest.sendBack()
+        if current.wasPlain { plainDisplay = true }
     }
 
     // MARK: Claude Code Profiles
