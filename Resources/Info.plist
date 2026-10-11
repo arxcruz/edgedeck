@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>CFBundleIdentifier</key><string>com.arxcruz.edgedeck</string>
+    <key>CFBundleName</key><string>EdgeDeck</string>
+    <key>CFBundleDisplayName</key><string>EdgeDeck</string>
+    <key>CFBundleIconFile</key><string>AppIcon</string>
+    <key>CFBundleExecutable</key><string>EdgeDeck</string>
+    <key>CFBundlePackageType</key><string>APPL</string>
+    <key>CFBundleShortVersionString</key><string>0.1.0</string>
+    <key>CFBundleVersion</key><string>1</string>
+    <key>LSMinimumSystemVersion</key><string>14.0</string>
+    <key>LSUIElement</key><true/>
+    <key>NSHighResolutionCapable</key><true/>
+    <key>NSCalendarsFullAccessUsageDescription</key><string>EdgeDeck shows your upcoming events on the Xeneon Edge.</string>
+    <key>NSCalendarsUsageDescription</key><string>EdgeDeck shows your upcoming events on the Xeneon Edge.</string>
+    <key>NSAppleEventsUsageDescription</key><string>EdgeDeck controls Music for its Music widget and runs the AppleScript actions you configure on its buttons.</string>
+</dict>
+</plist>

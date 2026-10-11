@@ -1,0 +1,29 @@
+#!/usr/bin/env bash
+# Builds build/EdgeDeck.app.
+#
+# Signing: a stable identity keeps macOS privacy permissions (Accessibility) across
+# rebuilds; ad-hoc signatures change every build, so the permission is lost each time.
+# Uses $SIGN_IDENTITY if set, else the first "Apple Development" certificate (created by
+# signing in to Xcode with an Apple ID), else ad-hoc.
+set -euo pipefail
+cd "$(dirname "$0")/.."
+
+if [ -z "${SIGN_IDENTITY:-}" ]; then
+    SIGN_IDENTITY=$(security find-identity -v -p codesigning 2>/dev/null \
+        | sed -n 's/.*"\(Apple Development: .*\)"/\1/p' | head -1)
+fi
+echo "Signing with: ${SIGN_IDENTITY:-ad-hoc}"
+
+swift build -c release
+APP=build/EdgeDeck.app
+rm -rf "$APP"
+mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
+cp .build/release/EdgeDeck "$APP/Contents/MacOS/EdgeDeck"
+cp Resources/Info.plist "$APP/Contents/Info.plist"
+# App icon, drawn by scripts/make-icon.swift.
+cp Resources/AppIcon.icns "$APP/Contents/Resources/AppIcon.icns"
+# Now Playing helper, loaded into /usr/bin/perl at runtime (see Helpers/EdgeDeckMedia.m).
+clang -dynamiclib -O2 -fobjc-arc -framework Foundation Helpers/EdgeDeckMedia.m \
+    -o "$APP/Contents/Resources/EdgeDeckMedia.dylib"
+codesign --force --sign "${SIGN_IDENTITY:--}" "$APP"
+echo "Built $APP"

@@ -1,0 +1,9 @@
+# Build output
+.build/
+build/
+.swiftpm/
+
+# Local session notes (personal details; never published)
+HANDOVER.md
+
+.DS_Store
