@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Builds build/EdgeDeck.app.
+# Builds build/EdgeDeck.app and installs it to /Applications.
 #
 # Signing: a stable identity keeps macOS privacy permissions (Accessibility) across
 # rebuilds; ad-hoc signatures change every build, so the permission is lost each time.
@@ -27,3 +27,11 @@ clang -dynamiclib -O2 -fobjc-arc -framework Foundation Helpers/EdgeDeckMedia.m \
     -o "$APP/Contents/Resources/EdgeDeckMedia.dylib"
 codesign --force --sign "${SIGN_IDENTITY:--}" "$APP"
 echo "Built $APP"
+
+# Install to /Applications, so Open at Login always points at the same copy.
+# NO_INSTALL=1 skips it (e.g. for snapshot runs).
+if [ "${NO_INSTALL:-}" != 1 ]; then
+    rm -rf /Applications/EdgeDeck.app
+    ditto "$APP" /Applications/EdgeDeck.app
+    echo "Installed /Applications/EdgeDeck.app"
+fi

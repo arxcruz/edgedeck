@@ -53,6 +53,7 @@ struct GridMetrics {
 }
 
 struct PageGridView: View {
+    static let space = "pageGrid"
     @EnvironmentObject var model: AppModel
     let page: PageConfig
     @ObservedObject var edit: EditState
@@ -78,6 +79,7 @@ struct PageGridView: View {
                     }
                 }
             }
+            .coordinateSpace(name: Self.space)
         }
     }
 
@@ -191,7 +193,8 @@ struct WidgetEditChrome: View {
 
     private func drag(_ mode: EditState.Mode) -> some Gesture {
         // Big enough that a finger's wobble during a Tap doesn't count as a drag.
-        DragGesture(minimumDistance: 8, coordinateSpace: .global)
+        // In the page's space, not the window's, so drags match the grid in the scaled preview too.
+        DragGesture(minimumDistance: 8, coordinateSpace: .named(PageGridView.space))
             .onChanged { value in
                 if edit.dragging != widget.id {
                     edit.dragging = widget.id

@@ -37,6 +37,7 @@ enum ActionRunner {
             guard AppLocator.url(for: action.value) != nil else {
                 return done(ActionResult(ok: false, message: "App not found: \(action.value)"))
             }
+            guard guest.screenFrame != .zero else { return done(ActionResult(ok: false, message: "The Edge isn't connected")) }
             guest.bringToEdge(action.value)
             done(ActionResult(ok: true))
         }

@@ -12,8 +12,11 @@ notifications reachable while it's there.
 
 ```sh
 ./scripts/build.sh
-open build/EdgeDeck.app
+open /Applications/EdgeDeck.app
 ```
+
+The build script installs the app to `/Applications` (`NO_INSTALL=1` skips that and
+leaves only `build/EdgeDeck.app`).
 
 On first launch macOS asks for **Accessibility** access (System Settings →
 Privacy & Security → Accessibility → EdgeDeck). It's needed to read
@@ -23,8 +26,14 @@ The build is ad-hoc signed, so macOS treats every rebuild as a new app and you
 have to re-enable Accessibility after rebuilding. To avoid that, sign with a
 stable identity: `SIGN_IDENTITY="Your Cert Name" ./scripts/build.sh`.
 
-The menu bar icon has Edit Layout, Open config.json, Reload, Send Back Guest App
-and Quit.
+The menu bar icon has Edit Layout, Open config.json, Reload, Send Back Guest App,
+**Open at Login** and Quit. Open at Login works for the copy in `/Applications`.
+
+EdgeDeck only uses the Xeneon Edge. While it isn't connected, the menu bar icon
+turns into a dashed rectangle, the menu says "Waiting for the Xeneon Edge…", and
+**Show Preview** opens the dashboard in a window on the main display, at the Edge's
+layout scaled to fit. Use it with the mouse to look around and edit. It closes when
+the Edge is plugged in. Bringing an app to the Edge needs the real Edge.
 
 ## Pages & layout
 
@@ -282,13 +291,15 @@ exact conversation.
 
 `match` is a substring of the display name; `railWidth` is the width of the
 Rail beside a Guest app or the Edge player. Older names (`dockOnTap`,
-`dockRailWidth`, `dockApp`, `zones`, `location`) are still read. Without a match EdgeDeck uses the
-smallest secondary display, or shows a preview strip on the main display.
+`dockRailWidth`, `dockApp`, `zones`, `location`) are still read. Without a match EdgeDeck waits for
+the Edge (see Show Preview above) rather than taking over another display.
 
 ## Debugging
 
 `EDGEDECK_SNAPSHOT=/tmp/edge.png build/EdgeDeck.app/Contents/MacOS/EdgeDeck`
 writes a PNG of the dashboard every 3 seconds.
+`EDGEDECK_NO_EDGE=1` behaves as if the Edge were unplugged; add
+`EDGEDECK_SNAPSHOT_PREVIEW=1` to open the preview and save it as `<path>-preview.png`.
 
 ## License
 

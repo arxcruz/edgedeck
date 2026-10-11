@@ -266,3 +266,19 @@ struct EditLayoutButton: View {
         .buttonStyle(PressableStyle())
     }
 }
+
+/// The dashboard at the Edge's size, scaled to fit the preview window, so it lays out exactly as on the Edge.
+struct ScaledDashboard: View {
+    let size: CGSize
+
+    var body: some View {
+        GeometryReader { geo in
+            let scale = min(geo.size.width / size.width, geo.size.height / size.height)
+            DashboardView()
+                .frame(width: size.width, height: size.height)
+                .scaleEffect(scale, anchor: .topLeading)
+                .frame(width: geo.size.width, height: geo.size.height, alignment: .topLeading)
+        }
+        .background(Color.black)
+    }
+}

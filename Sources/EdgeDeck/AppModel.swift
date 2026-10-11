@@ -17,6 +17,8 @@ final class AppModel: ObservableObject {
     let ai = AIModel()
     let swipe = SwipeState()
 
+    /// Whether the Xeneon Edge is plugged in; set by the app delegate.
+    @Published var edgeConnected = true
     @Published var editing = false {
         didSet { if !editing { endTyping() } }
     }
