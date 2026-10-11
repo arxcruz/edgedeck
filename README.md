@@ -459,6 +459,21 @@ writes a PNG of the dashboard every 3 seconds.
 `EDGEDECK_NO_EDGE=1` behaves as if the Edge were unplugged; add
 `EDGEDECK_SNAPSHOT_PREVIEW=1` to open the preview and save it as `<path>-preview.png`.
 
+## Plans for the future
+
+Ideas I may get to, in no particular order:
+
+- **Vertical display**: support the Edge mounted upright (portrait), with the
+  Dashboard, Pages and touch laid out for it.
+- **Settings window**: a window on the Mac's main screen for the global settings that
+  today live only in `config.json` (notifications, display, AI Profiles, …).
+- **Calendar editor**: choose calendars and how many days to show from the Edge,
+  instead of `config.json`.
+- **City labels**: give World Clock Cities your own names from the City editor.
+- **More AI agents**: other coding agents, such as Antigravity or Codex, in the AI
+  Agents widget.
+- **Now Playing**: a volume slider and ±15 s skip buttons.
+
 ## License
 
 MIT — see [LICENSE](LICENSE).
