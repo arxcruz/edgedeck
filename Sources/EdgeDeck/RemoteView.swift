@@ -1,79 +1,18 @@
 import AppKit
 import AVFoundation
 import CoreMedia
+import CryptoKit
 import IOKit.pwr_mgt
 import Network
 import ScreenCaptureKit
+import SwiftUI
 import VideoToolbox
 
 // Remote view: the Edge shows another Mac's Dashboard. The Host (the Mac the Edge is plugged
 // into) connects to the Source, which draws its Dashboard in its usual panel (hidden behind the
 // wallpaper when it has no Edge) and streams it as HEVC video; the Host sends touches back as
-// mouse events for that panel. Pixels, not Widget data: see docs/adr/0001.
-
-/// The messages between Host and Source: `[kind: 1 byte][length: 4 bytes, big-endian][payload]`.
-enum RemoteWire {
-    static let serviceType = "_edgedeck._tcp"
-    static let version: UInt8 = 1
-
-    enum Kind: UInt8 {
-        /// Host → Source: version, Dashboard width and height (points). Source → Host: version.
-        case hello = 1
-        /// Source → Host: the HEVC parameter sets, each `[length: 2][bytes]`.
-        case format
-        /// Source → Host: one encoded frame (length-prefixed NAL units).
-        case frame
-        /// Host → Source: `[phase][click count][x: Float32][y: Float32]`, position as a fraction of the Dashboard.
-        case touch
-        /// Either way, twice a second: the other side is still there.
-        case ping
-    }
-
-    enum TouchPhase: UInt8 { case down, move, up }
-
-    static func message(_ kind: Kind, _ payload: Data = Data()) -> Data {
-        var data = Data([kind.rawValue])
-        data.append(UInt32(payload.count).bigEndianData)
-        data.append(payload)
-        return data
-    }
-
-    /// Reads messages off `connection` one at a time, until it fails or closes.
-    static func receive(on connection: NWConnection, _ handle: @escaping (Kind, Data) -> Void) {
-        connection.receive(minimumIncompleteLength: 5, maximumLength: 5) { header, _, _, error in
-            guard error == nil, let header, header.count == 5 else { return }
-            let kind = Kind(rawValue: header[header.startIndex])
-            let length = Int(header.dropFirst().reduce(UInt32(0)) { $0 << 8 | UInt32($1) })
-            let next = { (payload: Data) in
-                if let kind { handle(kind, payload) }
-                receive(on: connection, handle)
-            }
-            if length == 0 { return next(Data()) }
-            connection.receive(minimumIncompleteLength: length, maximumLength: length) { payload, _, _, error in
-                guard error == nil, let payload, payload.count == length else { return }
-                next(payload)
-            }
-        }
-    }
-
-    /// This Mac's name as other Macs see it. EDGEDECK_REMOTE_NAME overrides it (for running a
-    /// second copy as a test Source on the same Mac).
-    static var localName: String {
-        ProcessInfo.processInfo.environment["EDGEDECK_REMOTE_NAME"] ?? Host.current().localizedName ?? "Mac"
-    }
-}
-
-extension FixedWidthInteger {
-    var bigEndianData: Data { withUnsafeBytes(of: bigEndian) { Data($0) } }
-}
-
-extension Data {
-    func readInteger<T: FixedWidthInteger>(at offset: Int, as: T.Type = T.self) -> T {
-        var value = T.zero
-        for i in 0..<MemoryLayout<T>.size { value = value << 8 | T(self[startIndex + offset + i]) }
-        return value
-    }
-}
+// mouse events for that panel. Pixels, not Widget data: see docs/adr/0001. The connection
+// (framing, Pairing, encryption) is in RemoteChannel.swift.
 
 // MARK: - Host
 
@@ -81,16 +20,20 @@ extension Data {
 final class RemoteHost: ObservableObject {
     /// Sources found on the network (other Macs running EdgeDeck), by name.
     @Published private(set) var sources: [String] = []
-    /// The Source on the Edge; nil = this Mac's own Dashboard.
+    /// The Source on the Edge (or being connected to or Paired with); nil = this Mac's own Dashboard.
     @Published private(set) var current: String?
-    /// Set when a Remote view ends on its own (the Source went away), for a Toast.
-    var onLost: (String) -> Void = { _ in }
+    /// While Pairing: the code to type on the Source.
+    @Published private(set) var pairingCode: String?
+    /// A Remote view ended on its own; the reason, for a Toast.
+    var onProblem: (String) -> Void = { NSLog("EdgeDeck: Remote view: \($0)") }
     /// The Dashboard size the Source should draw at.
     var dashboardSize = CGSize(width: 2560, height: 690)
 
     let display = AVSampleBufferDisplayLayer()
     private var browser: NWBrowser?
-    private var connection: NWConnection?
+    private var channel: RemoteChannel?
+    private var salt = Data()
+    private var streaming = false
     private var format: CMVideoFormatDescription?
     private var lastHeard = Date()
     private var timer: Timer?
@@ -116,24 +59,31 @@ final class RemoteHost: ObservableObject {
         display.backgroundColor = NSColor.black.cgColor
     }
 
-    /// Shows `name`'s Dashboard on the Edge.
+    /// Shows `name`'s Dashboard on the Edge, Pairing first if needed.
     func show(_ name: String) {
         end()
-        let connection = NWConnection(to: .service(name: name, type: RemoteWire.serviceType, domain: "local.", interface: nil), using: .tcp)
-        self.connection = connection
+        let channel = RemoteChannel(NWConnection(to: .service(name: name, type: RemoteWire.serviceType, domain: "local.", interface: nil), using: .tcp))
+        self.channel = channel
         current = name
         lastHeard = Date()
-        connection.stateUpdateHandler = { [weak self, weak connection] state in
-            if case .failed = state { DispatchQueue.main.async { if self?.connection === connection { self?.lose() } } }
+        salt = RemoteChannel.randomBytes(16)
+        channel.onMessage = { [weak self, weak channel] kind, payload in
+            DispatchQueue.main.async { if let channel, self?.channel === channel { self?.received(kind, payload) } }
         }
-        RemoteWire.receive(on: connection) { [weak self] kind, payload in
-            DispatchQueue.main.async { self?.received(kind, payload, from: connection) }
+        channel.onClose = { [weak self, weak channel] in
+            guard let self, let channel, self.channel === channel else { return }
+            self.lose(self.pairingCode != nil ? "Wrong code, or Pairing was cancelled on \(name)" : "\(name) went away")
         }
-        connection.start(queue: .main)
+        channel.start()
+        let secret = RemoteKeychain.secret(for: "source:" + name)
         var hello = Data([RemoteWire.version])
+        hello.append(withUnsafeBytes(of: RemoteWire.localID.uuid) { Data($0) })
+        hello.append(salt)
+        hello.append(secret == nil ? 0 : 1)
         hello.append(UInt16(dashboardSize.width).bigEndianData)
         hello.append(UInt16(dashboardSize.height).bigEndianData)
-        connection.send(content: RemoteWire.message(.hello, hello), completion: .contentProcessed { _ in })
+        hello.append(Data(RemoteWire.localName.utf8))
+        channel.send(.hello, hello)
         timer = Timer.scheduledTimer(withTimeInterval: 0.5, repeats: true) { [weak self] _ in self?.tick() }
     }
 
@@ -141,41 +91,81 @@ final class RemoteHost: ObservableObject {
     func end() {
         timer?.invalidate()
         timer = nil
-        connection?.cancel()
-        connection = nil
+        let channel = self.channel
+        self.channel = nil
+        channel?.close()
+        streaming = false
         format = nil
         display.sampleBufferRenderer.flush(removingDisplayedImage: true) {}
+        if pairingCode != nil { pairingCode = nil }
         if current != nil { current = nil }
     }
 
     func sendTouch(_ phase: RemoteWire.TouchPhase, at point: CGPoint, clickCount: Int) {
+        guard streaming else { return }
         var payload = Data([phase.rawValue, UInt8(clamping: clickCount)])
         payload.append(Float32(point.x).bitPattern.bigEndianData)
         payload.append(Float32(point.y).bitPattern.bigEndianData)
-        connection?.send(content: RemoteWire.message(.touch, payload), completion: .contentProcessed { _ in })
+        channel?.send(.touch, payload)
     }
 
     private func tick() {
-        connection?.send(content: RemoteWire.message(.ping), completion: .contentProcessed { _ in })
-        if Date().timeIntervalSince(lastHeard) > 2 { lose() }
+        if streaming {
+            channel?.send(.ping)
+            if Date().timeIntervalSince(lastHeard) > 2, let name = current { lose("\(name) went away") }
+        } else if Date().timeIntervalSince(lastHeard) > (pairingCode != nil ? 120 : 5), let name = current {
+            lose(pairingCode != nil ? "Pairing with \(name) timed out" : "Couldn't reach \(name)")
+        }
     }
 
-    private func lose() {
-        guard let name = current else { return }
+    private func lose(_ reason: String) {
         end()
-        onLost(name)
+        onProblem(reason)
     }
 
-    private func received(_ kind: RemoteWire.Kind, _ payload: Data, from connection: NWConnection) {
-        guard connection === self.connection else { return }
+    private func received(_ kind: RemoteWire.Kind, _ payload: Data) {
+        guard let channel, let name = current else { return }
         lastHeard = Date()
         switch kind {
+        case .hello:
+            guard payload.count >= 18, payload[payload.startIndex] == RemoteWire.version,
+                  let status = RemoteWire.HelloStatus(rawValue: payload[payload.startIndex + 1]), status != .versionMismatch else {
+                return lose("\(name) runs a different EdgeDeck version: update both Macs")
+            }
+            let sourceSalt = payload.subdata(in: payload.startIndex + 2 ..< payload.startIndex + 18)
+            if status == .paired, let secret = RemoteKeychain.secret(for: "source:" + name) {
+                beginStreaming(secret: secret, sourceSalt: sourceSalt)
+            } else {
+                // Pairing: the user types this code on the Source.
+                let code = String(format: "%06d", Int.random(in: 0..<1_000_000))
+                let keys = RemoteChannel.keys(from: RemoteChannel.codeKey(code), hostSalt: salt, sourceSalt: sourceSalt)
+                channel.seal(outgoing: keys.hostToSource, incoming: keys.sourceToHost)
+                pairingCode = code
+                self.sourceSalt = sourceSalt
+            }
+        case .codeTyped:
+            // It opened with the code's key, so the right code was typed.
+            let secret = SymmetricKey(size: .bits256)
+            channel.send(.secret, secret.withUnsafeBytes { Data($0) })
+            RemoteKeychain.store(secret, for: "source:" + name)
+            pairingCode = nil
+            beginStreaming(secret: secret, sourceSalt: sourceSalt)
         case .format:
-            if format == nil { NSLog("EdgeDeck: Remote view: first key frame from \(current ?? "?")") }
             format = Self.formatDescription(payload)
-        case .frame: if let format, let sample = Self.sampleBuffer(payload, format: format) { enqueue(sample) }
-        default: break
+        case .frame:
+            if let format, let sample = Self.sampleBuffer(payload, format: format) { enqueue(sample) }
+        default:
+            break
         }
+    }
+
+    private var sourceSalt = Data()
+
+    private func beginStreaming(secret: SymmetricKey, sourceSalt: Data) {
+        let keys = RemoteChannel.keys(from: secret, hostSalt: salt, sourceSalt: sourceSalt)
+        channel?.seal(outgoing: keys.hostToSource, incoming: keys.sourceToHost)
+        channel?.send(.start)
+        streaming = true
     }
 
     private func enqueue(_ sample: CMSampleBuffer) {
@@ -231,8 +221,9 @@ final class RemoteHost: ObservableObject {
     }
 }
 
-/// Shows the Source's Dashboard on the Host and sends touches on it back to the Source.
-/// Touches on the Edge reach it as mouse events, like any EdgeDeck window.
+/// The Host's panel during a Remote view: the Source's Dashboard, and over it the Pairing code
+/// while Pairing. Touches on the Edge reach it as mouse events, like any EdgeDeck window, and go
+/// on to the Source.
 final class RemoteStreamView: NSView {
     private let host: RemoteHost
 
@@ -241,6 +232,10 @@ final class RemoteStreamView: NSView {
         super.init(frame: .zero)
         layer = host.display
         wantsLayer = true
+        let overlay = PassThroughHostingView(rootView: RemoteOverlay().environmentObject(host))
+        overlay.passesThrough = { [weak host] in host?.pairingCode == nil }
+        overlay.autoresizingMask = [.width, .height]
+        addSubview(overlay)
     }
 
     required init?(coder: NSCoder) { fatalError("not used") }
@@ -259,6 +254,39 @@ final class RemoteStreamView: NSView {
     }
 }
 
+/// Lets clicks through to the view below unless `passesThrough` says otherwise.
+private final class PassThroughHostingView<Content: View>: NSHostingView<Content> {
+    var passesThrough: () -> Bool = { true }
+    override func hitTest(_ point: NSPoint) -> NSView? { passesThrough() ? nil : super.hitTest(point) }
+    override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
+}
+
+private struct RemoteOverlay: View {
+    @EnvironmentObject var host: RemoteHost
+
+    var body: some View {
+        if let code = host.pairingCode, let name = host.current {
+            ZStack {
+                Theme.background.opacity(0.94)
+                VStack(spacing: 18) {
+                    Text("Pair with \(name)").font(.system(size: 30, weight: .bold, design: .rounded))
+                    Text("Type this code on \(name):").font(.system(size: 20, design: .rounded)).foregroundStyle(.secondary)
+                    Text(code.prefix(3) + " " + code.suffix(3))
+                        .font(.system(size: 76, weight: .heavy, design: .monospaced))
+                        .tracking(6)
+                    Button { host.end() } label: {
+                        Text("Cancel").font(.system(size: 20, weight: .semibold, design: .rounded))
+                            .padding(.horizontal, 36).frame(height: 60)
+                            .background(Theme.tileRaised, in: Capsule())
+                    }
+                    .buttonStyle(.plain)
+                }
+                .foregroundStyle(.white)
+            }
+        }
+    }
+}
+
 // MARK: - Source
 
 /// The Source side: offers this Mac's Dashboard to Hosts and streams it while one is watching.
@@ -266,14 +294,19 @@ final class RemoteSource {
     /// A Host started watching at this Dashboard size (nil = nobody watching). The app delegate
     /// places the Dashboard panel and returns it, for capture.
     var onWatch: (CGSize?) -> NSWindow? = { _ in nil }
+    /// A Host wants to Pair: ask for the code shown on its Edge (nil = cancelled).
+    var onPairRequest: (_ hostName: String, _ answer: @escaping (String?) -> Void) -> Void = { $1(nil) }
 
     private var listener: NWListener?
-    private var connection: NWConnection?
+    private var channel: RemoteChannel?
     private var stream: SCStream?
     private var output: StreamOutput?
     private var encoder: VTCompressionSession?
     private weak var window: NSWindow?
     private var size = CGSize.zero
+    private var hostID = ""
+    private var hostSalt = Data()
+    private var salt = Data()
     private var forceKeyFrame = true
     private var lastHeard = Date()
     private var timer: Timer?
@@ -297,39 +330,72 @@ final class RemoteSource {
     /// One Host at a time: a new one replaces the last.
     private func accept(_ connection: NWConnection) {
         stop()
-        self.connection = connection
+        let channel = RemoteChannel(connection)
+        self.channel = channel
         lastHeard = Date()
-        connection.stateUpdateHandler = { [weak self, weak connection] state in
-            switch state {
-            case .failed, .cancelled: DispatchQueue.main.async { if self?.connection === connection { self?.stop() } }
-            default: break
-            }
+        channel.onMessage = { [weak self, weak channel] kind, payload in
+            DispatchQueue.main.async { if let channel, self?.channel === channel { self?.received(kind, payload) } }
         }
-        RemoteWire.receive(on: connection) { [weak self] kind, payload in
-            DispatchQueue.main.async { self?.received(kind, payload, from: connection) }
+        channel.onClose = { [weak self, weak channel] in
+            if let channel, self?.channel === channel { self?.stop() }
         }
-        connection.start(queue: .main)
+        channel.start()
     }
 
-    private func received(_ kind: RemoteWire.Kind, _ payload: Data, from connection: NWConnection) {
-        guard connection === self.connection else { return }
+    private func received(_ kind: RemoteWire.Kind, _ payload: Data) {
+        guard let channel else { return }
         lastHeard = Date()
         switch kind {
         case .hello:
-            guard payload.count >= 5, payload[payload.startIndex] == RemoteWire.version else { return stop() }
-            size = CGSize(width: Int(payload.readInteger(at: 1, as: UInt16.self)), height: Int(payload.readInteger(at: 3, as: UInt16.self)))
-            connection.send(content: RemoteWire.message(.hello, Data([RemoteWire.version])), completion: .contentProcessed { _ in })
+            salt = RemoteChannel.randomBytes(16)
+            guard payload.count >= 38, payload[payload.startIndex] == RemoteWire.version else {
+                channel.send(.hello, Data([RemoteWire.version, RemoteWire.HelloStatus.versionMismatch.rawValue]) + salt)
+                return
+            }
+            let id = payload.subdata(in: payload.startIndex + 1 ..< payload.startIndex + 17)
+            hostID = UUID(uuid: id.withUnsafeBytes { $0.loadUnaligned(as: uuid_t.self) }).uuidString
+            hostSalt = payload.subdata(in: payload.startIndex + 17 ..< payload.startIndex + 33)
+            let hostHasSecret = payload[payload.startIndex + 33] == 1
+            size = CGSize(width: Int(payload.readInteger(at: 34, as: UInt16.self)), height: Int(payload.readInteger(at: 36, as: UInt16.self)))
+            let hostName = String(decoding: payload.dropFirst(38), as: UTF8.self)
+            if hostHasSecret, let secret = RemoteKeychain.secret(for: "host:" + hostID) {
+                channel.send(.hello, Data([RemoteWire.version, RemoteWire.HelloStatus.paired.rawValue]) + salt)
+                seal(with: secret)
+            } else {
+                channel.send(.hello, Data([RemoteWire.version, RemoteWire.HelloStatus.needsCode.rawValue]) + salt)
+                onPairRequest(hostName) { [weak self, weak channel] code in
+                    guard let self, let channel, self.channel === channel else { return }
+                    guard let code else { return self.stop() }
+                    let keys = RemoteChannel.keys(from: RemoteChannel.codeKey(code), hostSalt: self.hostSalt, sourceSalt: self.salt)
+                    channel.seal(outgoing: keys.sourceToHost, incoming: keys.hostToSource)
+                    channel.send(.codeTyped)
+                }
+            }
+        case .secret:
+            // Arrived sealed with the code's key: Paired.
+            guard payload.count == 32 else { return stop() }
+            let secret = SymmetricKey(data: payload)
+            RemoteKeychain.store(secret, for: "host:" + hostID)
+            seal(with: secret)
+        case .start:
             beginStreaming()
         case .touch:
-            guard payload.count >= 10, let phase = RemoteWire.TouchPhase(rawValue: payload[payload.startIndex]) else { return }
+            guard window != nil, payload.count >= 10, let phase = RemoteWire.TouchPhase(rawValue: payload[payload.startIndex]) else { return }
             let x = CGFloat(Float32(bitPattern: payload.readInteger(at: 2, as: UInt32.self)))
             let y = CGFloat(Float32(bitPattern: payload.readInteger(at: 6, as: UInt32.self)))
             touch(phase, x: x, y: y, clickCount: Int(payload[payload.startIndex + 1]))
-        default: break
+        default:
+            break
         }
     }
 
+    private func seal(with secret: SymmetricKey) {
+        let keys = RemoteChannel.keys(from: secret, hostSalt: hostSalt, sourceSalt: salt)
+        channel?.seal(outgoing: keys.sourceToHost, incoming: keys.hostToSource)
+    }
+
     private func beginStreaming() {
+        guard window == nil else { return }
         guard let window = onWatch(size) else { return stop() }
         self.window = window
         // A sleeping display stops the capture, so keep it awake while watched.
@@ -344,16 +410,16 @@ final class RemoteSource {
     }
 
     private func tick() {
-        connection?.send(content: RemoteWire.message(.ping), completion: .contentProcessed { _ in })
+        channel?.send(.ping)
         if Date().timeIntervalSince(lastHeard) > 2 { stop() }
-        // Nothing changing means no new frames; a key frame now and then lets a Host recover from a glitch.
     }
 
     private func stop() {
         timer?.invalidate()
         timer = nil
-        connection?.cancel()
-        connection = nil
+        let channel = self.channel
+        self.channel = nil
+        channel?.close()
         if let stream { Task { try? await stream.stopCapture() } }
         stream = nil
         output = nil
@@ -368,7 +434,7 @@ final class RemoteSource {
     private func startCapture(windowID: CGWindowID) async {
         do {
             let content = try await SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly: false)
-            guard connection != nil, let target = content.windows.first(where: { $0.windowID == windowID }) else {
+            guard channel != nil, let target = content.windows.first(where: { $0.windowID == windowID }) else {
                 NSLog("EdgeDeck: Remote view: Dashboard window not capturable")
                 return stop()
             }
@@ -429,7 +495,7 @@ final class RemoteSource {
     }
 
     private func send(_ sample: CMSampleBuffer) {
-        guard let connection, let data = CMSampleBufferGetDataBuffer(sample), let format = CMSampleBufferGetFormatDescription(sample) else { return }
+        guard let channel, let data = CMSampleBufferGetDataBuffer(sample), let format = CMSampleBufferGetFormatDescription(sample) else { return }
         let attachments = CMSampleBufferGetSampleAttachmentsArray(sample, createIfNecessary: false) as? [[CFString: Any]]
         let keyFrame = !(attachments?.first?[kCMSampleAttachmentKey_NotSync] as? Bool ?? false)
         if keyFrame {
@@ -446,14 +512,13 @@ final class RemoteSource {
                 sets.append(UInt16(length).bigEndianData)
                 sets.append(pointer, count: length)
             }
-            connection.send(content: RemoteWire.message(.format, sets), completion: .contentProcessed { _ in })
+            channel.send(.format, sets)
         }
         var length = 0
         var pointer: UnsafeMutablePointer<CChar>?
         guard CMBlockBufferGetDataPointer(data, atOffset: 0, lengthAtOffsetOut: nil, totalLengthOut: &length, dataPointerOut: &pointer) == noErr,
               let pointer else { return }
-        let bytes = Data(bytes: pointer, count: length)
-        connection.send(content: RemoteWire.message(.frame, bytes), completion: .contentProcessed { _ in })
+        channel.send(.frame, Data(bytes: pointer, count: length))
     }
 
     /// A touch from the Host, as a mouse event for the Dashboard panel (the cursor never moves).

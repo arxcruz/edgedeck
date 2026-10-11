@@ -86,6 +86,8 @@ final class AppModel: ObservableObject {
             .sink { [weak self] _ in DispatchQueue.main.async { self?.finishAnswering() } }
             .store(in: &cancellables)
 
+        remoteHost.onProblem = { [weak self] text in self?.flashPlayerMessage(text) }
+
         music.$message
             .compactMap { $0 }
             .sink { [weak self] text in self?.flashPlayerMessage(text) }
@@ -333,7 +335,7 @@ final class AppModel: ObservableObject {
         }
     }
 
-    private func flashPlayerMessage(_ text: String) {
+    func flashPlayerMessage(_ text: String) {
         playerMessage = text
         DispatchQueue.main.asyncAfter(deadline: .now() + 3) { [weak self] in
             if self?.playerMessage == text { self?.playerMessage = nil }

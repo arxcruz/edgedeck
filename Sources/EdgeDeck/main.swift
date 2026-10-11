@@ -97,6 +97,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
             self.placePanel()
             return self.panel
         }
+        model.remoteSource.onPairRequest = { [weak self] hostName, answer in self?.askForPairingCode(hostName, answer) }
 
         // Blank cover over the menu bar on the Edge only. It's opaque to clicks so taps
         // there don't open invisible menus.
@@ -381,6 +382,24 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
             menu.addItem(none)
         }
         remoteItem.isEnabled = model.edgeConnected
+    }
+
+    /// On the Source: a Host wants to Pair, and its Edge shows the code.
+    private func askForPairingCode(_ hostName: String, _ answer: @escaping (String?) -> Void) {
+        let alert = NSAlert()
+        alert.messageText = "Show this Mac's Dashboard on \(hostName)'s Edge?"
+        alert.informativeText = "Type the 6-digit code shown on the Edge. You only need to do this once."
+        let field = NSTextField(frame: NSRect(x: 0, y: 0, width: 200, height: 28))
+        field.font = .monospacedSystemFont(ofSize: 18, weight: .semibold)
+        field.placeholderString = "123456"
+        alert.accessoryView = field
+        alert.addButton(withTitle: "Pair")
+        alert.addButton(withTitle: "Cancel")
+        alert.window.initialFirstResponder = field
+        NSApp.activate()
+        let ok = alert.runModal() == .alertFirstButtonReturn
+        let code = field.stringValue.filter(\.isNumber)
+        answer(ok && code.count == 6 ? code : nil)
     }
 
     // MARK: Touch
