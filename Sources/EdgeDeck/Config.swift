@@ -421,7 +421,7 @@ struct AppConfig: Codable, Hashable {
             ButtonConfig(title: "Next", symbol: "forward.fill", color: "#34C759", action: .init(type: .keys, value: "next")),
             ButtonConfig(title: "Mute", symbol: "speaker.slash.fill", color: "#FF9F0A", action: .init(type: .keys, value: "mute")),
             ButtonConfig(title: "Screenshot", symbol: "camera.viewfinder", color: "#5E9EFF", action: .init(type: .keys, value: "cmd+shift+4")),
-            ButtonConfig(title: "Slack → Edge", symbol: "rectangle.portrait.and.arrow.right", color: "#BF5AF2", action: .init(type: .bringToEdge, value: "com.tinyspeck.slackmacgap")),
+            ButtonConfig(title: "Bring Slack", symbol: "rectangle.portrait.and.arrow.right", color: "#BF5AF2", action: .init(type: .bringToEdge, value: "com.tinyspeck.slackmacgap")),
             ButtonConfig(title: "Lock", symbol: "lock.fill", color: "#FF453A", action: .init(type: .keys, value: "ctrl+cmd+q")),
         ]
         func at(_ x: Int, _ y: Int, _ w: Int, _ h: Int) -> GridFrame { GridFrame(x: x, y: y, w: w, h: h) }

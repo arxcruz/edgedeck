@@ -216,7 +216,7 @@ else (custom key combos, URLs, scripts) is added in `config.json`:
   "frame": { "x": 21, "y": 0, "w": 9, "h": 2 },
   "buttons": [
     { "title": "Slack", "action": { "type": "openApp", "value": "com.tinyspeck.slackmacgap" } },
-    { "title": "Slack → Edge", "symbol": "rectangle.portrait.and.arrow.right", "color": "#BF5AF2",
+    { "title": "Bring Slack", "symbol": "rectangle.portrait.and.arrow.right", "color": "#BF5AF2",
       "action": { "type": "bringToEdge", "value": "Slack" } },
     { "title": "Mute", "symbol": "speaker.slash.fill", "action": { "type": "keys", "value": "mute" } }
   ]
