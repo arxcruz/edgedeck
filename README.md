@@ -8,6 +8,20 @@ conversation) and, for apps listed in `bringToEdgeOnTap`, brings that app's wind
 the Edge as the Guest app. A strip on the right keeps **Activate** / **Send back** and your newest
 notifications reachable while it's there.
 
+## About this project
+
+EdgeDeck was vibe coded, and it's tailored to my own setup and needs. You're welcome
+to use it, fork it, change it or take whatever you want from it; I don't mind.
+
+The idea is to keep everything local, with no accounts or services. The only
+exceptions are Weather, which uses the public [Open-Meteo](https://open-meteo.com) API
+for forecasts and city search, and [Remote view](#another-macs-dashboard-remote-view),
+which connects your own Macs to each other over the local network. Everything else
+stays on the Mac.
+
+I haven't tested it extensively for memory leaks or for how much CPU it uses, so keep
+an eye on it if that matters to you.
+
 ## Build & run
 
 ```sh
