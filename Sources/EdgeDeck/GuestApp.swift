@@ -35,15 +35,25 @@ enum AX {
     }
 
     /// `rect` is in global top-left-origin coordinates (the Accessibility/CoreGraphics space).
-    static func setFrame(_ window: AXUIElement, _ rect: CGRect) {
+    static func setFrame(_ window: AXUIElement, _ rect: CGRect, retries: Int = 3) {
         var origin = rect.origin
         var size = rect.size
         guard let pos = AXValueCreate(.cgPoint, &origin), let sz = AXValueCreate(.cgSize, &size) else { return }
-        // Move first so the size isn't clamped by the old display, then size, then
-        // move again in case the app adjusted its origin while resizing.
+        // Size, move, size, move. A window moved onto another display gets fitted to it
+        // after the move: a big window sized only before or only after landed full-width
+        // on the Edge, covering the Rail.
+        AXUIElementSetAttributeValue(window, kAXSizeAttribute as CFString, sz)
         AXUIElementSetAttributeValue(window, kAXPositionAttribute as CFString, pos)
         AXUIElementSetAttributeValue(window, kAXSizeAttribute as CFString, sz)
         AXUIElementSetAttributeValue(window, kAXPositionAttribute as CFString, pos)
+        // The fitting can come later still; check and apply again. Terminals round their size
+        // to whole character cells, so small differences are fine.
+        guard retries > 0 else { return }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
+            guard let now = frame(of: window) else { return }
+            let off = [now.minX - rect.minX, now.minY - rect.minY, now.width - rect.width, now.height - rect.height]
+            if off.contains(where: { abs($0) > 24 }) { setFrame(window, rect, retries: retries - 1) }
+        }
     }
 
     /// Converts an AppKit (bottom-left origin) screen rect into AX coordinates.
