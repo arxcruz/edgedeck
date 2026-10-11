@@ -164,6 +164,16 @@ final class TouchController: ObservableObject {
         guard settings.enabled else { return idle(.off) }
         guard display != nil else { return idle(.noEdge) }
         guard AXIsProcessTrusted() else { return idle(.needsAccessibility) }
+        // Opening the touchscreen can succeed without Input Monitoring and then deliver nothing,
+        // so check the permission itself; asking is what makes macOS show its prompt.
+        guard IOHIDCheckAccess(kIOHIDRequestTypeListenEvent) == kIOHIDAccessTypeGranted else {
+            idle(.needsInputMonitoring)
+            if !askedForInputMonitoring {
+                askedForInputMonitoring = true
+                IOHIDRequestAccess(kIOHIDRequestTypeListenEvent)
+            }
+            return
+        }
         do {
             try input.start()
             if status != .running { status = .running }
