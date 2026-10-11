@@ -5,6 +5,13 @@ mirror of your macOS notifications, and Stream Deck–style launcher buttons.
 
 ![EdgeDeck's Main page on the Xeneon Edge](docs/screenshots/main.png)
 
+> [!IMPORTANT]
+> EdgeDeck isn't signed with an Apple Developer ID or notarized, so **macOS blocks it the
+> first time you open each version you download**. Allow it once in System Settings →
+> Privacy & Security → **Open Anyway** (or with `xattr`, see [Download](#download)).
+> After every update you also need to turn its **Accessibility** and **Input Monitoring**
+> permissions off and on again.
+
 Tapping a notification clicks the real macOS banner (so Slack opens the right
 conversation) and, for apps listed in `bringToEdgeOnTap`, brings that app's window to
 the Edge as the Guest app. A strip on the right keeps **Activate** / **Send back** and your newest
@@ -97,11 +104,14 @@ on Apple silicon and Intel Macs.
 The release is **not notarized**. It's built by GitHub Actions and ad-hoc signed, with no
 developer certificate, so macOS blocks it the first time ("can't be opened" or "is
 damaged"). To allow it, open it once and then go to System Settings → Privacy & Security
-and click **Open Anyway**, or run:
+and click **Open Anyway** (right-click → Open no longer does it since macOS 15), or run:
 
 ```sh
 xattr -dr com.apple.quarantine /Applications/EdgeDeck.app
 ```
+
+You only do this once per version: that copy then opens normally. Every update is a new
+download, so it needs allowing again.
 
 Because the signature changes with every release, macOS also forgets EdgeDeck's
 Accessibility and Input Monitoring permissions after each update. Turn them off and on
