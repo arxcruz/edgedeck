@@ -88,6 +88,30 @@ Toast when a Session needs you, Show cost.
 
 ![Connect agents editor](docs/screenshots/connect-agents.png)
 
+## Download
+
+Get `EdgeDeck-<version>.dmg` from the [Releases](https://github.com/arxcruz/edgedeck/releases)
+page, open it and drag **EdgeDeck** to **Applications**. It runs on macOS 14 or later,
+on Apple silicon and Intel Macs.
+
+The release is **not notarized**. It's built by GitHub Actions and ad-hoc signed, with no
+developer certificate, so macOS blocks it the first time ("can't be opened" or "is
+damaged"). To allow it, open it once and then go to System Settings → Privacy & Security
+and click **Open Anyway**, or run:
+
+```sh
+xattr -dr com.apple.quarantine /Applications/EdgeDeck.app
+```
+
+Because the signature changes with every release, macOS also forgets EdgeDeck's
+Accessibility and Input Monitoring permissions after each update. Turn them off and on
+again (or remove EdgeDeck from the list and add it back) when it asks.
+
+To make a release, push a tag such as `v0.2.0`: the
+[Release workflow](.github/workflows/release.yml) builds the DMG
+(`scripts/make-dmg.sh`) and attaches it to a GitHub Release. Running the workflow by
+hand only uploads the DMG as a build artifact.
+
 ## Build & run
 
 ```sh

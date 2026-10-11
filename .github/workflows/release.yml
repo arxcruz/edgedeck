@@ -1,0 +1,46 @@
+# Builds a universal, ad-hoc signed EdgeDeck DMG (scripts/make-dmg.sh). No certificates or
+# secrets: the app is never signed with a personal identity.
+#
+# Push a tag like v0.2.0 to publish a GitHub Release with the DMG attached; run it by hand
+# (Actions → Release → Run workflow) to get the DMG as a build artifact only.
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  dmg:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Version
+        run: |
+          if [[ "$GITHUB_REF_TYPE" == tag ]]; then
+            version="${GITHUB_REF_NAME#v}"
+          else
+            version="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' Resources/Info.plist)-dev.${GITHUB_SHA::7}"
+          fi
+          echo "VERSION=$version" >> "$GITHUB_ENV"
+
+      - name: Test
+        run: ./scripts/test.sh
+
+      - name: Build DMG
+        run: ./scripts/make-dmg.sh
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: EdgeDeck-${{ env.VERSION }}
+          path: build/EdgeDeck-${{ env.VERSION }}.dmg
+
+      - name: Publish release
+        if: github.ref_type == 'tag'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release create "$GITHUB_REF_NAME" "build/EdgeDeck-$VERSION.dmg" --title "EdgeDeck $VERSION" --generate-notes

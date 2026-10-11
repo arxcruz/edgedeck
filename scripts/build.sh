@@ -3,8 +3,11 @@
 #
 # Signing: a stable identity keeps macOS privacy permissions (Accessibility) across
 # rebuilds; ad-hoc signatures change every build, so the permission is lost each time.
-# Uses $SIGN_IDENTITY if set, else the first "Apple Development" certificate (created by
-# signing in to Xcode with an Apple ID), else ad-hoc.
+# Uses $SIGN_IDENTITY if set ("-" for ad-hoc), else the first "Apple Development"
+# certificate (created by signing in to Xcode with an Apple ID), else ad-hoc.
+#
+# ARCHS="arm64 x86_64" builds a universal app (default: this Mac's architecture).
+# VERSION=1.2.3 sets the app's version (default: the one in Resources/Info.plist).
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
@@ -14,16 +17,23 @@ if [ -z "${SIGN_IDENTITY:-}" ]; then
 fi
 echo "Signing with: ${SIGN_IDENTITY:-ad-hoc}"
 
-swift build -c release
+ARCH_FLAGS=()
+CLANG_ARCHS=()
+for arch in ${ARCHS:-}; do ARCH_FLAGS+=(--arch "$arch"); CLANG_ARCHS+=(-arch "$arch"); done
+swift build -c release ${ARCH_FLAGS[@]+"${ARCH_FLAGS[@]}"}
+BIN=$(swift build -c release ${ARCH_FLAGS[@]+"${ARCH_FLAGS[@]}"} --show-bin-path)
 APP=build/EdgeDeck.app
 rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
-cp .build/release/EdgeDeck "$APP/Contents/MacOS/EdgeDeck"
+cp "$BIN/EdgeDeck" "$APP/Contents/MacOS/EdgeDeck"
 cp Resources/Info.plist "$APP/Contents/Info.plist"
+if [ -n "${VERSION:-}" ]; then
+    /usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString $VERSION" "$APP/Contents/Info.plist"
+fi
 # App icon, drawn by scripts/make-icon.swift.
 cp Resources/AppIcon.icns "$APP/Contents/Resources/AppIcon.icns"
 # Now Playing helper, loaded into /usr/bin/perl at runtime (see Helpers/EdgeDeckMedia.m).
-clang -dynamiclib -O2 -fobjc-arc -framework Foundation Helpers/EdgeDeckMedia.m \
+clang ${CLANG_ARCHS[@]+"${CLANG_ARCHS[@]}"} -dynamiclib -O2 -fobjc-arc -framework Foundation Helpers/EdgeDeckMedia.m \
     -o "$APP/Contents/Resources/EdgeDeckMedia.dylib"
 codesign --force --sign "${SIGN_IDENTITY:--}" "$APP"
 echo "Built $APP"
