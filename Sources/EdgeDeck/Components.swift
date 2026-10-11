@@ -256,3 +256,107 @@ struct Pager<Item: Identifiable, Cell: View>: View {
         }
     }
 }
+
+/// A wrapping row of chips that reorder by dragging: the chip follows the finger, the others make
+/// room, and `onMove(from, to)` is called once when it's let go. `trailing` ends the row (e.g. "+ New").
+struct ReorderableChips<Item: Identifiable, Chip: View, Trailing: View>: View {
+    let items: [Item]
+    var minChipWidth: CGFloat = 230
+    let onMove: (_ from: Int, _ to: Int) -> Void
+    @ViewBuilder let chip: (Item) -> Chip
+    @ViewBuilder var trailing: () -> Trailing
+
+    @State private var dragging: Item.ID?
+    @State private var location: CGPoint = .zero
+    /// The order while a chip is being dragged.
+    @State private var order: [Item.ID]?
+    @State private var frames: [Item.ID: CGRect] = [:]
+
+    private let space = "reorderableChips"
+
+    var body: some View {
+        let shown = order.map { order in order.compactMap { id in items.first { $0.id == id } } } ?? items
+        LazyVGrid(columns: [GridItem(.adaptive(minimum: minChipWidth), spacing: 8)], alignment: .leading, spacing: 8) {
+            ForEach(shown) { item in
+                chip(item)
+                    .background(GeometryReader { geo in
+                        Color.clear.preference(key: ChipFrames.self, value: [AnyHashable(item.id): geo.frame(in: .named(space))])
+                    })
+                    // The slot the dragged chip will land in. (Not `.opacity`: it stops Buttons taking clicks.)
+                    .overlay {
+                        if dragging == item.id {
+                            Capsule().fill(Theme.background.opacity(0.85))
+                                .overlay(Capsule().strokeBorder(Color.white.opacity(0.4), style: StrokeStyle(lineWidth: 2, dash: [6, 4])))
+                        }
+                    }
+                    .highPriorityGesture(drag(item))
+            }
+            trailing()
+        }
+        .coordinateSpace(name: space)
+        .onPreferenceChange(ChipFrames.self) { all in
+            frames = Dictionary(uniqueKeysWithValues: all.compactMap { key, frame in (key.base as? Item.ID).map { ($0, frame) } })
+        }
+        .overlay(alignment: .topLeading) {
+            if let id = dragging, let item = items.first(where: { $0.id == id }), let frame = frames[id] {
+                chip(item)
+                    .frame(width: frame.width, height: frame.height)
+                    .scaleEffect(1.06)
+                    .shadow(color: .black.opacity(0.6), radius: 12)
+                    .position(location)
+                    .allowsHitTesting(false)
+            }
+        }
+    }
+
+    private func drag(_ item: Item) -> some Gesture {
+        // Big enough that a finger's wobble during a Tap doesn't count as a drag.
+        DragGesture(minimumDistance: 8, coordinateSpace: .named(space))
+            .onChanged { value in
+                if dragging == nil {
+                    dragging = item.id
+                    order = items.map(\.id)
+                }
+                location = value.location
+                guard var current = order, let from = current.firstIndex(of: item.id),
+                      let target = frames.first(where: { $0.key != item.id && $0.value.contains(value.location) })?.key,
+                      let to = current.firstIndex(of: target) else { return }
+                current.move(fromOffsets: [from], toOffset: to > from ? to + 1 : to)
+                withAnimation(.easeOut(duration: 0.15)) { order = current }
+            }
+            .onEnded { _ in
+                if let order, let from = items.firstIndex(where: { $0.id == item.id }),
+                   let to = order.firstIndex(of: item.id), from != to {
+                    onMove(from, to)
+                }
+                dragging = nil
+                order = nil
+            }
+    }
+}
+
+private struct ChipFrames: PreferenceKey {
+    static var defaultValue: [AnyHashable: CGRect] { [:] }
+    static func reduce(value: inout [AnyHashable: CGRect], nextValue: () -> [AnyHashable: CGRect]) {
+        value.merge(nextValue()) { $1 }
+    }
+}
+
+extension Array {
+    /// Moves the element at `from` so it ends up at index `to`.
+    mutating func move(from: Int, to: Int) {
+        guard indices.contains(from), indices.contains(to), from != to else { return }
+        insert(remove(at: from), at: to)
+    }
+}
+
+/// The line above a chip row saying its chips can be dragged.
+struct ReorderHint: View {
+    let text: String
+
+    var body: some View {
+        Label(text, systemImage: "hand.draw")
+            .font(.system(size: 13, weight: .medium, design: .rounded))
+            .foregroundStyle(Theme.secondaryText)
+    }
+}

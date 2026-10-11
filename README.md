@@ -115,7 +115,7 @@ Add as many World Clock widgets as you like, on any page.
 
 In edit mode, tap the widget to pick cities by touch: toggle **Local**, choose a region, page through
 the cities (or jump with the A–Z index) and tap to add or remove. Selected
-cities appear at the top, where ‹ moves one earlier and ✕ removes it. In
+cities appear at the top, where you drag to reorder and ✕ removes one. In
 `config.json` each city is `{ "timeZone": "America/Sao_Paulo", "label": "Office" }`,
 where `label` is an optional custom name; `"timeZone": "local"` is the Local city.
 
@@ -209,7 +209,7 @@ yourself: `"ai": { "claudeDirs": ["~/.claude-work"] }` in `config.json`
 In edit mode (**Edit**, bottom-left), tap a launcher to edit it by touch
 (an empty launcher also shows **+ Add apps** outside edit mode). Tap the title at the top
 to rename the launcher (**Save** / **Cancel**; empty shows "Launcher"). The top row shows its buttons
-in order (‹ › to move, ✕ to remove, tap one to edit it, **+ New Button** for a blank one); below, every installed app (from the
+in order (drag to reorder, ✕ to remove, tap one to edit it, **+ New Button** for a blank one); below, every installed app (from the
 Applications folders, plus Finder) — tap one to add or remove it. **Running**
 narrows the list to open apps; page with ⌃⌄ / swipes or jump with the A–Z index.
 **Controls** offers ready-made buttons (play/pause, previous/next, volume, mute,

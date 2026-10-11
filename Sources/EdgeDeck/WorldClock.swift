@@ -374,19 +374,24 @@ struct CityEditor: View {
         .background(Theme.background)
     }
 
-    /// Chosen cities in display order, each with move-earlier and remove buttons.
+    /// Chosen cities in display order: drag to reorder, ✕ to remove.
     private func selectedRow(_ cities: [City]) -> some View {
-        LazyVGrid(columns: [GridItem(.adaptive(minimum: 210), spacing: 8)], alignment: .leading, spacing: 8) {
-            ForEach(Array(cities.enumerated()), id: \.element.id) { index, city in
+        VStack(alignment: .leading, spacing: 6) {
+            if cities.count > 1 { ReorderHint(text: "Drag a city to reorder it") }
+            ReorderableChips(items: cities, minChipWidth: 210, onMove: { from, to in
+                model.updateWidget(widgetID) { $0.cities?.move(from: from, to: to) }
+            }) { city in
                 HStack(spacing: 6) {
-                    TouchButton(symbol: "chevron.left", size: 32, enabled: index > 0) { move(city.id, by: -1) }
-                    Text(city.name).font(.system(size: 14, weight: .semibold, design: .rounded)).lineLimit(1)
+                    Text(city.name).font(.system(size: 14, weight: .semibold, design: .rounded)).lineLimit(1).padding(.leading, 10)
                     Spacer(minLength: 0)
                     TouchButton(symbol: "xmark", tint: Color(hex: "#FF453A"), size: 32) { remove(city.id) }
                 }
                 .padding(.horizontal, 6)
                 .frame(height: 44)
                 .background(accent.opacity(0.15), in: Capsule())
+                .contentShape(Capsule())
+            } trailing: {
+                EmptyView()
             }
         }
     }
@@ -431,15 +436,6 @@ struct CityEditor: View {
 
     private func remove(_ id: UUID) {
         model.updateWidget(widgetID) { $0.cities?.removeAll { $0.id == id } }
-    }
-
-    private func move(_ id: UUID, by offset: Int) {
-        model.updateWidget(widgetID) { widget in
-            guard var list = widget.cities, let index = list.firstIndex(where: { $0.id == id }),
-                  list.indices.contains(index + offset) else { return }
-            list.swapAt(index, index + offset)
-            widget.cities = list
-        }
     }
 }
 

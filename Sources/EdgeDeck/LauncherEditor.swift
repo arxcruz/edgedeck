@@ -262,7 +262,7 @@ struct LauncherEditor: View {
             HStack(spacing: 12) {
                 Image(systemName: WidgetKind.launcher.symbol).foregroundStyle(accent)
                 titleField(current: widget?.title ?? "")
-                Text("\(buttons.count) buttons · tap one to edit it, or tap below to add or remove").foregroundStyle(Theme.secondaryText)
+                Text("\(buttons.count) buttons · tap below to add or remove").foregroundStyle(Theme.secondaryText)
                 Spacer()
                 Button { model.launcherEditorWidgetID = nil } label: {
                     Text("Done")
@@ -397,42 +397,43 @@ struct LauncherEditor: View {
         })
     }
 
-    /// The launcher's buttons in order, each with move and remove controls; tap one to edit it.
+    /// The launcher's buttons in order: tap one to edit it, drag to reorder, ✕ to remove.
     private func selectedRow(_ buttons: [ButtonConfig]) -> some View {
-        LazyVGrid(columns: [GridItem(.adaptive(minimum: 230), spacing: 8)], alignment: .leading, spacing: 8) {
-            ForEach(Array(buttons.enumerated()), id: \.element.id) { index, button in
+        VStack(alignment: .leading, spacing: 6) {
+            if buttons.count > 1 { ReorderHint(text: "Drag a button to reorder it · tap it to edit") }
+            ReorderableChips(items: buttons, onMove: { from, to in
+                model.updateWidget(widgetID) { $0.buttons?.move(from: from, to: to) }
+            }) { button in
                 HStack(spacing: 6) {
-                    TouchButton(symbol: "chevron.left", size: 32, enabled: index > 0) { move(button.id, by: -1) }
-                    Button { state.detail = .existing(button.id) } label: {
-                        HStack(spacing: 6) {
-                            ButtonIcon(button: button, size: 24)
-                            Text(button.title.isEmpty ? "No title" : button.title)
-                                .font(.system(size: 14, weight: .semibold, design: .rounded))
-                                .foregroundStyle(button.title.isEmpty ? Theme.secondaryText : .white)
-                                .lineLimit(1)
-                            Spacer(minLength: 0)
-                        }
-                        .frame(maxHeight: .infinity)
-                        .contentShape(Rectangle())
+                    HStack(spacing: 8) {
+                        ButtonIcon(button: button, size: 24)
+                        Text(button.title.isEmpty ? "No title" : button.title)
+                            .font(.system(size: 14, weight: .semibold, design: .rounded))
+                            .foregroundStyle(button.title.isEmpty ? Theme.secondaryText : .white)
+                            .lineLimit(1)
+                        Spacer(minLength: 0)
                     }
-                    .buttonStyle(PressableStyle())
-                    TouchButton(symbol: "chevron.right", size: 32, enabled: index < buttons.count - 1) { move(button.id, by: 1) }
+                    .padding(.leading, 8)
+                    .frame(maxHeight: .infinity)
+                    .contentShape(Rectangle())
+                    .onTapGesture { state.detail = .existing(button.id) }
                     TouchButton(symbol: "xmark", tint: Color(hex: "#FF453A"), size: 32) { remove(button.id) }
                 }
                 .padding(.horizontal, 6)
                 .frame(height: 44)
                 .background(accent.opacity(0.15), in: Capsule())
+            } trailing: {
+                Button { state.detail = .new } label: {
+                    Label("New Button", systemImage: "plus")
+                        .font(.system(size: 14, weight: .bold, design: .rounded))
+                        .foregroundStyle(accent)
+                        .frame(maxWidth: .infinity)
+                        .frame(height: 44)
+                        .background(Capsule().strokeBorder(accent.opacity(0.6), style: StrokeStyle(lineWidth: 2, dash: [6, 4])))
+                        .contentShape(Capsule())
+                }
+                .buttonStyle(PressableStyle())
             }
-            Button { state.detail = .new } label: {
-                Label("New Button", systemImage: "plus")
-                    .font(.system(size: 14, weight: .bold, design: .rounded))
-                    .foregroundStyle(accent)
-                    .frame(maxWidth: .infinity)
-                    .frame(height: 44)
-                    .background(Capsule().strokeBorder(accent.opacity(0.6), style: StrokeStyle(lineWidth: 2, dash: [6, 4])))
-                    .contentShape(Capsule())
-            }
-            .buttonStyle(PressableStyle())
         }
     }
 
@@ -492,15 +493,6 @@ struct LauncherEditor: View {
 
     private func remove(_ id: UUID) {
         model.updateWidget(widgetID) { $0.buttons?.removeAll { $0.id == id } }
-    }
-
-    private func move(_ id: UUID, by offset: Int) {
-        model.updateWidget(widgetID) { widget in
-            guard var list = widget.buttons, let index = list.firstIndex(where: { $0.id == id }),
-                  list.indices.contains(index + offset) else { return }
-            list.swapAt(index, index + offset)
-            widget.buttons = list
-        }
     }
 }
 
