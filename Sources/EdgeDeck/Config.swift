@@ -378,6 +378,18 @@ struct AISettings: Codable, Hashable {
     var claudeDirs: [String]?
     /// OpenCode's database. Nil: ~/.local/share/opencode/opencode.db.
     var opencodeDatabase: String?
+    /// A Session that Needs you raises a Toast (or a Rail button during a Takeover).
+    var toastOnNeedsYou = true
+
+    init() {}
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        let d = AISettings()
+        claudeDirs = try c.decodeIfPresent([String].self, forKey: .claudeDirs)
+        opencodeDatabase = try c.decodeIfPresent(String.self, forKey: .opencodeDatabase)
+        toastOnNeedsYou = try c.decodeIfPresent(Bool.self, forKey: .toastOnNeedsYou) ?? d.toastOnNeedsYou
+    }
 }
 
 struct AppConfig: Codable, Hashable {

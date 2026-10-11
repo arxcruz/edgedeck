@@ -81,16 +81,25 @@ struct DashboardView: View {
                     .padding(.bottom, model.editing ? Self.toolbarHeight + 12 : 16)
             }
 
-            if let toast = model.notifications.toast, !railVisible {
-                ToastView(notification: toast)
-                    .padding(.top, 24)
-                    .transition(.move(edge: .top).combined(with: .opacity))
+            // One Toast at a time; a Session that Needs you outranks a Notification.
+            if !railVisible {
+                if let session = model.ai.toastSessions.first {
+                    AgentToastView(session: session, more: model.ai.toastSessions.count - 1)
+                        .id(session.id)
+                        .padding(.top, 24)
+                        .transition(.move(edge: .top).combined(with: .opacity))
+                } else if let toast = model.notifications.toast {
+                    ToastView(notification: toast)
+                        .padding(.top, 24)
+                        .transition(.move(edge: .top).combined(with: .opacity))
+                }
             }
         }
         .overlay(alignment: .trailing) {
             if railVisible { Rail().frame(width: railWidth) }
         }
         .animation(.spring(response: 0.35, dampingFraction: 0.85), value: model.notifications.toast)
+        .animation(.spring(response: 0.35, dampingFraction: 0.85), value: model.ai.toastSessions)
         .environmentObject(model.stats)
         .environmentObject(model.runningApps)
         .environmentObject(model.nowPlaying)
@@ -166,6 +175,62 @@ struct ToastView: View {
     }
 }
 
+/// The Toast for a Session that Needs you. It stays until the Session stops needing you
+/// or ✕ is tapped.
+struct AgentToastView: View {
+    @EnvironmentObject var model: AppModel
+    let session: AgentSession
+    /// Other Sessions that also Need you.
+    let more: Int
+
+    var body: some View {
+        let color = Color(hex: session.state.color)
+        HStack(spacing: 16) {
+            Image(systemName: session.state.symbol)
+                .font(.system(size: 26, weight: .bold))
+                .foregroundStyle(color)
+                .frame(width: 56, height: 56)
+                .background(color.opacity(0.18), in: Circle())
+            VStack(alignment: .leading, spacing: 4) {
+                Text([session.tool == .claude ? "Claude" : "OpenCode", session.profile].compactMap { $0 }.joined(separator: " · "))
+                    .font(.system(size: 14, weight: .heavy, design: .rounded))
+                    .foregroundStyle(color)
+                Text(detail)
+                    .font(.system(size: 17, weight: .semibold, design: .rounded))
+                    .foregroundStyle(.white)
+                if more > 0 {
+                    Text("+\(more) more")
+                        .font(.system(size: 13, weight: .semibold, design: .rounded))
+                        .foregroundStyle(Theme.secondaryText)
+                }
+            }
+            .lineLimit(1)
+            Spacer(minLength: 0)
+            Button { model.ai.focus(session) } label: {
+                Label("Go to session", systemImage: "terminal")
+                    .font(.system(size: 17, weight: .semibold, design: .rounded))
+                    .foregroundStyle(.black)
+                    .padding(.horizontal, 20)
+                    .frame(height: 56)
+                    .background(Color.white, in: Capsule())
+            }
+            .buttonStyle(PressableStyle())
+            TouchButton(symbol: "xmark", tint: Theme.secondaryText, size: 48) { model.dismissAgentToast() }
+        }
+        .padding(14)
+        .frame(width: 760)
+        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 26, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 26, style: .continuous).stroke(color.opacity(0.8), lineWidth: 1.5))
+        .shadow(color: .black.opacity(0.6), radius: 30)
+    }
+
+    private var detail: String {
+        let project = session.project.isEmpty ? "A session" : session.project
+        if case .needsYou(let tool?) = session.state { return "\(project) — wants to run \(tool)" }
+        return "\(project) — needs your input"
+    }
+}
+
 /// The Rail: controls on the right of the Edge during a Takeover (Guest app or Edge player).
 struct Rail: View {
     @EnvironmentObject var model: AppModel
@@ -193,6 +258,12 @@ struct Rail: View {
                 }
                 RailButton(title: "Close", symbol: "xmark") { model.player.close() }
             }
+            // Stands in for the Needs-you Toast while the Dashboard is covered; ✕ doesn't hide it.
+            if let session = model.ai.needingYou.first {
+                let count = model.ai.needingYou.count
+                RailButton(title: count > 1 ? "\(count) need you" : "Needs you", symbol: session.state.symbol,
+                           tint: Color(hex: session.state.color)) { model.ai.focus(session) }
+            }
             Divider().overlay(Color.white.opacity(0.15))
             // Newest notifications stay reachable while the dashboard is covered.
             ForEach(model.notifications.items.prefix(3)) { item in
@@ -210,6 +281,7 @@ struct Rail: View {
 struct RailButton: View {
     let title: String
     let symbol: String
+    var tint: Color = .white
     let action: () -> Void
 
     var body: some View {
@@ -218,9 +290,9 @@ struct RailButton: View {
                 Image(systemName: symbol).font(.system(size: 24, weight: .semibold))
                 Text(title).font(.system(size: 13, weight: .semibold, design: .rounded))
             }
-            .foregroundStyle(.white)
+            .foregroundStyle(tint)
             .frame(maxWidth: .infinity, minHeight: 76)
-            .background(Theme.tileRaised, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+            .background(tint == .white ? Theme.tileRaised : tint.opacity(0.2), in: RoundedRectangle(cornerRadius: 16, style: .continuous))
             .contentShape(Rectangle())
         }
         .buttonStyle(PressableStyle())

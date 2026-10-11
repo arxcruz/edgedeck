@@ -213,6 +213,13 @@ exactly what was added and restores your statusline command. To list profiles
 yourself: `"ai": { "claudeDirs": ["~/.claude-work"] }` in `config.json`
 (`opencodeDatabase` overrides OpenCode's database path).
 
+When a session **Needs you**, a Toast drops in on the Edge (whatever Page you're
+on) with **Go to session**; it stays until the session moves on or you tap ✕. While
+a Guest app or the Edge player covers the Dashboard, an orange **Needs you** button
+on the Rail stands in for it. Your terminal's own "needs your permission"
+notification gets no second Toast. Turn it off in the widget's Connect view
+(`"ai": { "toastOnNeedsYou": false }`). Claude Code profiles must be Connected.
+
 ## Launcher buttons
 
 In edit mode (**Edit**, bottom-left), tap a launcher to edit it by touch

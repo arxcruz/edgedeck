@@ -44,6 +44,10 @@ final class AppModel: ObservableObject {
             }
             .store(in: &cancellables)
 
+        notifications.suppressesToast = { [weak self] notification in
+            self?.ai.needingYouTerminals.contains(notification.app.lowercased()) ?? false
+        }
+
         // Forward nested changes so views observing the model refresh.
         for publisher in [configStore.objectWillChange, notifications.objectWillChange, guest.objectWillChange, player.objectWillChange, ai.objectWillChange] {
             publisher.sink { [weak self] _ in self?.objectWillChange.send() }.store(in: &cancellables)
@@ -102,6 +106,13 @@ final class AppModel: ObservableObject {
                 self.guest.bringToEdge(notification.app)
             }
         }
+    }
+
+    /// ✕ on a Needs-you Toast; a terminal's own notification about it goes too.
+    func dismissAgentToast() {
+        let terminals = ai.needingYouTerminals
+        ai.dismissToast()
+        if let toast = notifications.toast, terminals.contains(toast.app.lowercased()) { notifications.dismissToast() }
     }
 
     func bringToEdge(_ item: RunningApp) {

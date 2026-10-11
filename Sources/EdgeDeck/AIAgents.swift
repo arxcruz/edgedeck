@@ -46,6 +46,7 @@ enum AgentState: Equatable {
     }
 
     var isActive: Bool { self != .idle }
+    var needsYou: Bool { if case .needsYou = self { true } else { false } }
 }
 
 struct AgentSession: Identifiable, Equatable {
@@ -329,8 +330,13 @@ final class AIModel: ObservableObject {
         didSet { if settings != oldValue { refreshProfiles() } }
     }
 
+    /// Needs-you occurrences closed with ✕ (see `toastKey`).
+    @Published private var dismissedToasts = Set<String>()
+
     private var visibleWidgets = Set<UUID>()
     private var timer: Timer?
+    private var fileWatch: FSEventStreamRef?
+    private var polling = false
     private let queue = DispatchQueue(label: "edgedeck.ai")
     /// Per profile key: last hook event per Claude session id.
     private var hookEvents: [String: [String: HookEvent]] = [:]
@@ -349,6 +355,35 @@ final class AIModel: ObservableObject {
     func start() {
         refreshProfiles()
         schedule()
+        watchFiles()
+    }
+
+    // MARK: Needs you
+
+    /// Sessions that Need you, newest first (the Rail shows these during a Takeover).
+    var needingYou: [AgentSession] {
+        guard settings.toastOnNeedsYou else { return [] }
+        return sessions.filter(\.state.needsYou).sorted { $0.since > $1.since }
+    }
+
+    /// What the Toast announces: Sessions that Need you, minus the ones dismissed.
+    var toastSessions: [AgentSession] {
+        needingYou.filter { !dismissedToasts.contains(Self.toastKey($0)) }
+    }
+
+    /// ✕ closes these occurrences only; the same Session needing you again is a new Toast.
+    func dismissToast() {
+        dismissedToasts.formUnion(toastSessions.map(Self.toastKey))
+    }
+
+    /// Names of the terminal apps running Sessions that Need you, e.g. "iTerm2".
+    var needingYouTerminals: Set<String> {
+        Set(needingYou.compactMap { terminal(of: $0)?.localizedName?.lowercased() })
+    }
+
+    /// One Needs-you occurrence: the Session plus when it started needing you.
+    private static func toastKey(_ session: AgentSession) -> String {
+        "\(session.id)@\(session.since.timeIntervalSince1970)"
     }
 
     func setVisible(_ id: UUID, _ visible: Bool) {
@@ -357,7 +392,8 @@ final class AIModel: ObservableObject {
         if before != visibleWidgets.isEmpty { schedule() }
     }
 
-    /// Polls quickly while a widget is on screen, slowly otherwise (state for toasts later).
+    /// Polls quickly while a widget is on screen, slowly otherwise. Changes on disk
+    /// trigger a poll straight away (see `watchFiles`), so Toasts don't wait for this.
     private func schedule() {
         timer?.invalidate()
         let interval: TimeInterval = visibleWidgets.isEmpty ? 10 : 1.5
@@ -368,6 +404,34 @@ final class AIModel: ObservableObject {
     func refreshProfiles() {
         profiles = ClaudeProfile.discover(settings.claudeDirs)
         connectionStatus = Dictionary(uniqueKeysWithValues: profiles.map { ($0.key, ClaudeConnection.status($0)) })
+        if fileWatch != nil { watchFiles() }
+    }
+
+    /// Polls whenever the bridge's events or a profile's session files change, so a Session
+    /// that Needs you shows within a fraction of a second. OpenCode's database folder too.
+    private func watchFiles() {
+        if let stream = fileWatch {
+            FSEventStreamStop(stream)
+            FSEventStreamInvalidate(stream)
+            FSEventStreamRelease(stream)
+        }
+        try? FileManager.default.createDirectory(at: ClaudeConnection.dataRoot, withIntermediateDirectories: true)
+        let opencode = (settings.opencodeDatabase.map { ($0 as NSString).expandingTildeInPath }
+            ?? FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".local/share/opencode/opencode.db").path) as NSString
+        let paths = ([ClaudeConnection.dataRoot.path, opencode.deletingLastPathComponent] + profiles.map(\.sessionsDirectory.path))
+            .filter { FileManager.default.fileExists(atPath: $0) }
+        var context = FSEventStreamContext(version: 0, info: Unmanaged.passUnretained(self).toOpaque(), retain: nil, release: nil, copyDescription: nil)
+        let callback: FSEventStreamCallback = { _, info, _, _, _, _ in
+            guard let info else { return }
+            Unmanaged<AIModel>.fromOpaque(info).takeUnretainedValue().poll()
+        }
+        guard let stream = FSEventStreamCreate(nil, callback, &context, paths as CFArray,
+                                               FSEventStreamEventId(kFSEventStreamEventIdSinceNow), 0.3,
+                                               FSEventStreamCreateFlags(kFSEventStreamCreateFlagNoDefer))
+        else { fileWatch = nil; return }
+        FSEventStreamSetDispatchQueue(stream, .main)
+        FSEventStreamStart(stream)
+        fileWatch = stream
     }
 
     func connect(_ profile: ClaudeProfile) {
@@ -384,21 +448,27 @@ final class AIModel: ObservableObject {
 
     /// Brings the terminal running a session forward.
     func focus(_ session: AgentSession) {
-        guard var pid = session.pid else { return }
+        terminal(of: session)?.activate()
+    }
+
+    /// The app (usually a terminal) a Session's process runs under.
+    func terminal(of session: AgentSession) -> NSRunningApplication? {
+        guard var pid = session.pid else { return nil }
         for _ in 0..<12 {
-            if let app = NSRunningApplication(processIdentifier: pid), app.activationPolicy == .regular {
-                app.activate()
-                return
-            }
+            if let app = NSRunningApplication(processIdentifier: pid), app.activationPolicy == .regular { return app }
             let parent = Self.parentPID(pid)
-            guard parent > 1 else { return }
+            guard parent > 1 else { return nil }
             pid = parent
         }
+        return nil
     }
 
     // MARK: Polling
 
     private func poll() {
+        // File changes can arrive in bursts; one poll in flight is enough.
+        guard !polling else { return }
+        polling = true
         let profiles = profiles
         let opencodePath = settings.opencodeDatabase.map { ($0 as NSString).expandingTildeInPath }
             ?? FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".local/share/opencode/opencode.db").path
@@ -421,7 +491,10 @@ final class AIModel: ObservableObject {
             // Busy sessions first, then the most recently changed.
             sessions.sort { ($0.state.isActive ? 0 : 1, -$0.since.timeIntervalSince1970) < ($1.state.isActive ? 0 : 1, -$1.since.timeIntervalSince1970) }
             DispatchQueue.main.async {
+                self.polling = false
                 if sessions != self.sessions { self.sessions = sessions }
+                let current = Set(sessions.filter(\.state.needsYou).map(Self.toastKey))
+                if !self.dismissedToasts.isSubset(of: current) { self.dismissedToasts.formIntersection(current) }
                 if usage != self.claudeUsage { self.claudeUsage = usage }
                 if ocUsage != self.openCodeUsage { self.openCodeUsage = ocUsage }
             }
@@ -429,7 +502,8 @@ final class AIModel: ObservableObject {
     }
 
     private func since(_ id: String, _ state: AgentState, fallback: Date) -> Date {
-        if let (previous, date) = stateSince[id], previous == state { return date }
+        // A permission request followed by its Notification is one Needs you, not two.
+        if let (previous, date) = stateSince[id], previous == state || (previous.needsYou && state.needsYou) { return date }
         let date = stateSince[id] == nil ? fallback : Date()
         stateSince[id] = (state, date)
         return date
@@ -509,6 +583,11 @@ final class AIModel: ObservableObject {
                   let name = event["hook_event_name"] as? String else { continue }
             let time = Date(timeIntervalSince1970: (json["ts"] as? NSNumber)?.doubleValue ?? Date().timeIntervalSince1970)
             if name == "SessionEnd" { events.removeValue(forKey: session); continue }
+            // Keep the PermissionRequest (it names the tool) over the Notification that follows it.
+            if name == "Notification", events[session]?.name == "PermissionRequest" { continue }
+            // Claude Code finishes a background subagent just after the turn's Stop; that
+            // SubagentStop would otherwise read as Busy and leave the Session stuck there.
+            if name == "SubagentStop", ["Stop", "StopFailure"].contains(events[session]?.name) { continue }
             events[session] = HookEvent(name: name, tool: event["tool_name"] as? String, message: event["message"] as? String, time: time)
         }
         hookEvents[profile.key] = events

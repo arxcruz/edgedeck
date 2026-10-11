@@ -128,8 +128,8 @@ EdgeDeck's mirror of one macOS notification, as listed by the Notifications Widg
 _Avoid_: Alert, banner (for the mirror)
 
 **Toast**:
-The brief pop-up on the Edge announcing a new Notification.
-_Avoid_: Banner, popup
+The brief pop-up on the Edge announcing something that wants the user: a new Notification, or a Session that Needs you.
+_Avoid_: Banner, popup, agent alert
 
 **Banner**:
 Only Apple's original notification on the main screen, which EdgeDeck reads and presses.
@@ -173,8 +173,20 @@ One configuration of an Agent tool with its own state directory (Claude Code: `~
 _Avoid_: Account, config dir
 
 **Session**:
-One running conversation of an Agent tool within a Profile, which is either busy or idle. It exists only while its process is alive; there is no "ended" state.
+One running conversation of an Agent tool within a Profile, which is always Busy, Idle or Needs you. It exists only while its process is alive; there is no "ended" state.
 _Avoid_: Agent, process, chat
+
+**Busy**:
+A Session working on its own (thinking, running a tool, compacting).
+_Avoid_: Working, running (as the state name)
+
+**Idle**:
+A Session waiting for a new prompt, including one that stopped on an error.
+_Avoid_: Done, finished, stopped
+
+**Needs you**:
+A Session blocked until the user answers it (e.g. approves a tool). The only Session state that raises a Toast.
+_Avoid_: Waiting, blocked, pending permission
 
 **Connect**:
 Installing EdgeDeck's bridge into one Profile so it reports events and rate limits. Its reverse is **Disconnect**.

@@ -153,7 +153,7 @@ private struct AgentRow: View {
 
     var body: some View {
         let color = Color(hex: session.state.color)
-        let needsYou = { if case .needsYou = session.state { true } else { false } }()
+        let needsYou = session.state.needsYou
         Button { ai.focus(session) } label: {
             HStack(spacing: 12) {
                 Group {
@@ -251,6 +251,7 @@ private struct OpenCodeIcon: View {
 /// Full-screen: every Claude profile found, what's installed in it, and connect /
 /// disconnect buttons.
 struct ConnectEditor: View {
+    @EnvironmentObject var model: AppModel
     @EnvironmentObject var ai: AIModel
 
     var body: some View {
@@ -287,6 +288,8 @@ struct ConnectEditor: View {
                 }
             }
 
+            toastSetting
+
             if let message = ai.connectionMessage {
                 Text(message)
                     .font(.system(size: 14, weight: .semibold, design: .rounded))
@@ -300,6 +303,38 @@ struct ConnectEditor: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .background(Theme.background)
         .onAppear { ai.refreshProfiles() }
+    }
+
+    /// App-wide, not per Widget: it's about Sessions, so two AI Widgets can't disagree.
+    private var toastSetting: some View {
+        let on = model.config.ai.toastOnNeedsYou
+        return Button {
+            model.configStore.update { $0.ai.toastOnNeedsYou.toggle() }
+        } label: {
+            HStack(spacing: 14) {
+                Image(systemName: AgentState.needsYou(nil).symbol)
+                    .font(.system(size: 22, weight: .bold))
+                    .foregroundStyle(Color(hex: AgentState.needsYou(nil).color))
+                    .frame(width: 40)
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Toast when a Session needs you").font(.system(size: 17, weight: .bold, design: .rounded))
+                    Text("Claude Code profiles must be connected for this.")
+                        .font(.system(size: 12, weight: .medium, design: .rounded))
+                        .foregroundStyle(Theme.secondaryText)
+                }
+                Spacer(minLength: 8)
+                Text(on ? "On" : "Off")
+                    .font(.system(size: 15, weight: .bold, design: .rounded))
+                    .foregroundStyle(on ? .black : .white)
+                    .frame(width: 88, height: 44)
+                    .background(on ? Theme.accent(for: .ai) : Theme.tile, in: Capsule())
+            }
+            .padding(14)
+            .frame(maxWidth: 560, alignment: .leading)
+            .background(Theme.tileRaised, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(PressableStyle())
     }
 }
 

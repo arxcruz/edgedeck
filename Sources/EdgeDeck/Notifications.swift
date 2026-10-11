@@ -21,6 +21,9 @@ final class NotificationWatcher: ObservableObject {
     @Published private(set) var toast: EdgeNotification?
 
     var settings = NotificationSettings()
+    /// Notifications that get no Toast of their own (still listed), e.g. a terminal's
+    /// "Claude needs your permission" while that Session's Needs-you Toast is up.
+    var suppressesToast: (EdgeNotification) -> Bool = { _ in false }
 
     /// Banners currently on screen, keyed by notification id, so a tap can press the real one.
     private var liveBanners: [String: AXUIElement] = [:]
@@ -94,7 +97,7 @@ final class NotificationWatcher: ObservableObject {
         guard !fresh.isEmpty else { return }
         items.insert(contentsOf: fresh.reversed(), at: 0)
         if items.count > settings.maxItems { items.removeLast(items.count - settings.maxItems) }
-        if primed, let newest = fresh.last { showToast(newest) }
+        if primed, let newest = fresh.last, !suppressesToast(newest) { showToast(newest) }
         pruneMemory()
     }
 
