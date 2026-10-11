@@ -209,9 +209,8 @@ profile: EdgeDeck backs up its `settings.json`
 through a small script (`~/Library/Application Support/EdgeDeck/bin/claude-bridge`)
 that saves what Claude Code sends and runs your own statusline unchanged.
 Running sessions pick up the hooks after a restart. **Disconnect** removes
-exactly what was added and restores your statusline command. To list profiles
-yourself: `"ai": { "claudeDirs": ["~/.claude-work"] }` in `config.json`
-(`opencodeDatabase` overrides OpenCode's database path).
+exactly what was added and restores your statusline command.
+(`"ai": { "opencodeDatabase": "…" }` overrides OpenCode's database path.)
 
 When a session **Needs you**, a Toast drops in on the Edge (whatever Page you're
 on) with **Go to session**; it stays until the session moves on or you tap ✕. While
@@ -219,6 +218,48 @@ a Guest app or the Edge player covers the Dashboard, an orange **Needs you** but
 on the Rail stands in for it. Your terminal's own "needs your permission"
 notification gets no second Toast. Turn it off in the widget's Connect view
 (`"ai": { "toastOnNeedsYou": false }`). Claude Code profiles must be Connected.
+
+### Several Claude Code profiles
+
+Claude Code keeps everything (login, settings, history) in one config folder,
+`~/.claude` by default. Setting `CLAUDE_CONFIG_DIR` points it at another one, so
+you can keep separate profiles — e.g. work and personal accounts on one Mac:
+
+```sh
+# zsh / bash (~/.zshrc, ~/.bashrc)
+alias claude-work='CLAUDE_CONFIG_DIR=~/.claude-work claude'
+alias claude-personal='CLAUDE_CONFIG_DIR=~/.claude-personal claude'
+```
+
+```fish
+# fish (~/.config/fish/config.fish)
+alias claude-work 'CLAUDE_CONFIG_DIR=~/.claude-work claude'
+alias claude-personal 'CLAUDE_CONFIG_DIR=~/.claude-personal claude'
+```
+
+EdgeDeck finds profiles on its own:
+
+- `~/.claude`, `~/.claude-*` and `~/.claude_*`, once Claude Code has run there
+  (a folder with only a copied `settings.json` doesn't count);
+- any other folder, the first time a session runs with `CLAUDE_CONFIG_DIR`
+  pointing at it (it's remembered in `config.json`);
+- **Add folder…** in the widget's Connect view (opens the folder picker on the
+  Mac's own screen).
+
+Profiles are named after their folder: `~/.claude` is *default*, `~/.claude-work`
+is *work*, `~/dev/acme/claude` is *acme*. Each one is Connected on its own. **Hide**
+takes one off the list (Disconnecting it first); hidden ones can be shown again
+from the same view. In `config.json`:
+
+```json
+"ai": {
+  "claudeDirs": ["~/dev/acme/claude"],
+  "hiddenClaudeDirs": ["~/.claude-old"]
+}
+```
+
+`claudeDirs` adds folders to the ones found automatically; `hiddenClaudeDirs`
+hides profiles.
 
 ## Launcher buttons
 

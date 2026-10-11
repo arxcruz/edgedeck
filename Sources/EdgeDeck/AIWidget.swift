@@ -282,9 +282,46 @@ struct ConnectEditor: View {
                     .foregroundStyle(Theme.secondaryText)
             }
 
+            HStack(spacing: 14) {
+                Button { model.addClaudeFolder() } label: {
+                    Label("Add folder…", systemImage: "folder.badge.plus")
+                        .font(.system(size: 15, weight: .bold, design: .rounded))
+                        .foregroundStyle(.white)
+                        .padding(.horizontal, 18)
+                        .frame(height: 44)
+                        .background(Theme.tileRaised, in: Capsule())
+                        .contentShape(Capsule())
+                }
+                .buttonStyle(PressableStyle())
+                Text("Using CLAUDE_CONFIG_DIR? Start a session once and it appears here, or tap Add folder… (opens on the Mac's screen).")
+                    .font(.system(size: 13, weight: .medium, design: .rounded))
+                    .foregroundStyle(Theme.secondaryText)
+                    .lineLimit(2)
+            }
+
             LazyVGrid(columns: [GridItem(.adaptive(minimum: 560), spacing: 12)], alignment: .leading, spacing: 12) {
                 ForEach(ai.profiles) { profile in
                     ProfileCard(profile: profile, status: ai.connectionStatus[profile.key])
+                }
+            }
+
+            if !ai.hiddenProfiles.isEmpty {
+                HStack(spacing: 10) {
+                    Text("Hidden:")
+                        .font(.system(size: 14, weight: .semibold, design: .rounded))
+                        .foregroundStyle(Theme.secondaryText)
+                    ForEach(ai.hiddenProfiles) { profile in
+                        Button { model.showProfile(profile) } label: {
+                            Label("Show \(profile.name)", systemImage: "eye")
+                                .font(.system(size: 14, weight: .bold, design: .rounded))
+                                .foregroundStyle(.white)
+                                .padding(.horizontal, 16)
+                                .frame(height: 44)
+                                .background(Theme.tileRaised, in: Capsule())
+                                .contentShape(Capsule())
+                        }
+                        .buttonStyle(PressableStyle())
+                    }
                 }
             }
 
@@ -339,6 +376,7 @@ struct ConnectEditor: View {
 }
 
 private struct ProfileCard: View {
+    @EnvironmentObject var model: AppModel
     @EnvironmentObject var ai: AIModel
     let profile: ClaudeProfile
     let status: ClaudeConnection.Status?
@@ -359,6 +397,10 @@ private struct ProfileCard: View {
                 }
             }
             Spacer(minLength: 8)
+            Button { model.hideProfile(profile) } label: {
+                pill(status?.hooks == true || status?.statusline == true ? "Disconnect & hide" : "Hide", fill: Theme.tile, text: Theme.secondaryText)
+            }
+            .buttonStyle(PressableStyle())
             if connected {
                 Button { ai.disconnect(profile) } label: { pill("Disconnect", fill: Theme.tile, text: .white) }
                     .buttonStyle(PressableStyle())

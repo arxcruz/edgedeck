@@ -169,7 +169,7 @@ A coding-agent program EdgeDeck watches, e.g. Claude Code or OpenCode.
 _Avoid_: Agent, AI, provider
 
 **Profile**:
-One configuration of an Agent tool with its own state directory (Claude Code: `~/.claude`, `~/.claude-work`, …). OpenCode has exactly one implicit Profile.
+One configuration of an Agent tool with its own state directory (Claude Code: `~/.claude`, `~/.claude-work`, or any folder named by `CLAUDE_CONFIG_DIR`). A folder only counts once the Agent tool has run there; Profiles are found on their own (home folder, running Sessions) or added by the user, and can be hidden. OpenCode has exactly one implicit Profile.
 _Avoid_: Account, config dir
 
 **Session**:

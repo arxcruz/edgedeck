@@ -374,8 +374,11 @@ struct DisplaySettings: Codable, Hashable {
 }
 
 struct AISettings: Codable, Hashable {
-    /// Claude Code config directories (CLAUDE_CONFIG_DIR). Nil: ~/.claude and every ~/.claude-* found.
+    /// Claude Code config folders (CLAUDE_CONFIG_DIR) beyond the ones found on their own
+    /// (~/.claude, ~/.claude-*): added in the Editor, by hand, or learned from running Sessions.
     var claudeDirs: [String]?
+    /// Profile folders not to show (e.g. "~/.claude-old").
+    var hiddenClaudeDirs: [String] = []
     /// OpenCode's database. Nil: ~/.local/share/opencode/opencode.db.
     var opencodeDatabase: String?
     /// A Session that Needs you raises a Toast (or a Rail button during a Takeover).
@@ -387,6 +390,7 @@ struct AISettings: Codable, Hashable {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         let d = AISettings()
         claudeDirs = try c.decodeIfPresent([String].self, forKey: .claudeDirs)
+        hiddenClaudeDirs = try c.decodeIfPresent([String].self, forKey: .hiddenClaudeDirs) ?? d.hiddenClaudeDirs
         opencodeDatabase = try c.decodeIfPresent(String.self, forKey: .opencodeDatabase)
         toastOnNeedsYou = try c.decodeIfPresent(Bool.self, forKey: .toastOnNeedsYou) ?? d.toastOnNeedsYou
     }

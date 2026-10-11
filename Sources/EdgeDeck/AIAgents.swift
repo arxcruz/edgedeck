@@ -85,38 +85,82 @@ struct OpenCodeUsage: Equatable {
 
 struct ClaudeProfile: Identifiable, Hashable {
     let directory: URL
+    /// "default", "work", "acme"… Unique among the Profiles shown (see `discover`).
+    var name: String
+
+    init(directory: URL, name: String? = nil) {
+        self.directory = directory.standardizedFileURL
+        self.name = name ?? Self.baseName(self.directory)
+    }
 
     var id: String { directory.path }
-    /// "claude", "claude-work"… — names EdgeDeck's own files for this profile.
-    var key: String { directory.lastPathComponent.trimmingCharacters(in: CharacterSet(charactersIn: ".")) }
-    /// "default", "work", "personal".
-    var name: String {
-        let k = key
-        if k == "claude" { return "default" }
-        for prefix in ["claude-", "claude_", "claude."] where k.hasPrefix(prefix) { return String(k.dropFirst(prefix.count)) }
-        return k
+    /// Names EdgeDeck's own files for this Profile: the path from the home folder, e.g.
+    /// "claude", "claude-work", "dev-acme-claude". The bridge in settings.json carries it.
+    var key: String {
+        let home = FileManager.default.homeDirectoryForCurrentUser.standardizedFileURL.pathComponents
+        var parts = directory.pathComponents
+        if parts.starts(with: home) { parts.removeFirst(home.count) } else { parts.removeFirst() }
+        return parts.map { $0.trimmingCharacters(in: CharacterSet(charactersIn: ".")) }
+            .filter { !$0.isEmpty }
+            .joined(separator: "-")
+            .replacingOccurrences(of: " ", with: "_")
     }
     var settingsURL: URL { directory.appendingPathComponent("settings.json") }
     var sessionsDirectory: URL { directory.appendingPathComponent("sessions") }
     /// Where the bridge writes for this profile.
     var dataDirectory: URL { ClaudeConnection.dataRoot.appendingPathComponent(key, isDirectory: true) }
+    /// The folder as config.json stores it, e.g. "~/.claude-work".
+    var configPath: String { Self.configPath(directory) }
 
-    /// ~/.claude plus any ~/.claude-* / ~/.claude_* that looks like a Claude Code config dir.
-    static func discover(_ configured: [String]?) -> [ClaudeProfile] {
-        let fm = FileManager.default
-        if let configured {
-            return configured.map { ClaudeProfile(directory: URL(fileURLWithPath: ($0 as NSString).expandingTildeInPath, isDirectory: true)) }
-                .filter { fm.fileExists(atPath: $0.directory.path) }
+    /// "~/.claude" is "default", "~/.claude-work" is "work"; a folder called just "claude"
+    /// elsewhere takes its parent's name ("~/dev/acme/claude" is "acme").
+    private static func baseName(_ directory: URL) -> String {
+        func trimmed(_ s: String) -> String { s.trimmingCharacters(in: CharacterSet(charactersIn: ".")) }
+        let last = trimmed(directory.lastPathComponent)
+        for prefix in ["claude-", "claude_", "claude."] where last.hasPrefix(prefix) && last.count > prefix.count {
+            return String(last.dropFirst(prefix.count))
         }
-        let home = fm.homeDirectoryForCurrentUser
+        guard last == "claude" else { return last }
+        if directory == home.appendingPathComponent(".claude").standardizedFileURL { return "default" }
+        let parent = trimmed(directory.deletingLastPathComponent().lastPathComponent)
+        return parent.isEmpty ? last : parent
+    }
+
+    private static var home: URL { FileManager.default.homeDirectoryForCurrentUser }
+
+    static func configPath(_ directory: URL) -> String {
+        (directory.standardizedFileURL.path as NSString).abbreviatingWithTildeInPath
+    }
+
+    static func url(fromConfig path: String) -> URL {
+        URL(fileURLWithPath: (path as NSString).expandingTildeInPath, isDirectory: true).standardizedFileURL
+    }
+
+    /// Every Profile: ~/.claude, ~/.claude-* and ~/.claude_* that Claude Code has actually run
+    /// in (a copied settings.json alone doesn't count), plus `extra` folders that exist (added
+    /// by hand or learned from running Sessions). Returns the shown and the hidden ones.
+    static func discover(extra: [String], hidden: [String]) -> (shown: [ClaudeProfile], hidden: [ClaudeProfile]) {
+        let fm = FileManager.default
         let names = (try? fm.contentsOfDirectory(atPath: home.path)) ?? []
-        return names
+        let found = names
             .filter { $0 == ".claude" || $0.hasPrefix(".claude-") || $0.hasPrefix(".claude_") }
-            .map { ClaudeProfile(directory: home.appendingPathComponent($0, isDirectory: true)) }
-            .filter { profile in
-                ["settings.json", "projects", "sessions", ".claude.json"].contains { fm.fileExists(atPath: profile.directory.appendingPathComponent($0).path) }
-            }
-            .sorted { ($0.key == "claude" ? 0 : 1, $0.key) < ($1.key == "claude" ? 0 : 1, $1.key) }
+            .map { home.appendingPathComponent($0, isDirectory: true).standardizedFileURL }
+            .filter { dir in ["projects", "sessions", ".claude.json"].contains { fm.fileExists(atPath: dir.appendingPathComponent($0).path) } }
+            .sorted { ($0.lastPathComponent == ".claude" ? 0 : 1, $0.path) < ($1.lastPathComponent == ".claude" ? 0 : 1, $1.path) }
+        var dirs: [URL] = []
+        for dir in found + extra.map(url(fromConfig:)) where !dirs.contains(dir) {
+            var isDirectory: ObjCBool = false
+            if fm.fileExists(atPath: dir.path, isDirectory: &isDirectory), isDirectory.boolValue { dirs.append(dir) }
+        }
+        let hiddenDirs = Set(hidden.map(url(fromConfig:)))
+        var profiles = dirs.map { ClaudeProfile(directory: $0) }
+        // Two "work"s: tell them apart by their parent folders.
+        let clashing = Set(Dictionary(grouping: profiles, by: \.name).filter { $0.value.count > 1 }.keys)
+        for index in profiles.indices where clashing.contains(profiles[index].name) {
+            let parent = profiles[index].directory.deletingLastPathComponent().lastPathComponent
+            profiles[index].name = "\(parent.trimmingCharacters(in: CharacterSet(charactersIn: ".")))/\(profiles[index].name)"
+        }
+        return (profiles.filter { !hiddenDirs.contains($0.directory) }, profiles.filter { hiddenDirs.contains($0.directory) })
     }
 }
 
@@ -321,6 +365,8 @@ final class AIModel: ObservableObject {
     @Published private(set) var claudeUsage: [ClaudeUsage] = []
     @Published private(set) var openCodeUsage: OpenCodeUsage?
     @Published private(set) var profiles: [ClaudeProfile] = []
+    /// Profiles the user hid; listed in the Editor so they can be shown again.
+    @Published private(set) var hiddenProfiles: [ClaudeProfile] = []
     @Published private(set) var connectionStatus: [String: ClaudeConnection.Status] = [:]
     @Published var connectionMessage: String?
     /// The full-screen Connect Claude Code view is showing.
@@ -336,6 +382,10 @@ final class AIModel: ObservableObject {
     private var visibleWidgets = Set<UUID>()
     private var timer: Timer?
     private var fileWatch: FSEventStreamRef?
+    /// Called with a Claude config folder a running Session uses that isn't a Profile yet;
+    /// the app remembers it in config.json (`ai.claudeDirs`).
+    var learnedProfile: (String) -> Void = { _ in }
+    private var lastLearn = Date.distantPast
     private var polling = false
     private let queue = DispatchQueue(label: "edgedeck.ai")
     /// Per profile key: last hook event per Claude session id.
@@ -402,8 +452,8 @@ final class AIModel: ObservableObject {
     }
 
     func refreshProfiles() {
-        profiles = ClaudeProfile.discover(settings.claudeDirs)
-        connectionStatus = Dictionary(uniqueKeysWithValues: profiles.map { ($0.key, ClaudeConnection.status($0)) })
+        (profiles, hiddenProfiles) = ClaudeProfile.discover(extra: settings.claudeDirs ?? [], hidden: settings.hiddenClaudeDirs)
+        connectionStatus = Dictionary(uniqueKeysWithValues: (profiles + hiddenProfiles).map { ($0.key, ClaudeConnection.status($0)) })
         if fileWatch != nil { watchFiles() }
     }
 
@@ -446,6 +496,24 @@ final class AIModel: ObservableObject {
 
     var needsConnect: Bool { profiles.contains { !(connectionStatus[$0.key]?.connected ?? false) } }
 
+    /// Running Claude Code processes started with CLAUDE_CONFIG_DIR reveal Profiles kept
+    /// anywhere, e.g. ~/dev/acme/claude. Hidden ones stay hidden.
+    private func learnProfiles() {
+        let known = Set((profiles + hiddenProfiles).map(\.directory))
+        queue.async { [weak self] in
+            var found: [URL] = []
+            for pid in Self.pids(named: "claude") + Self.pids(named: "node") {
+                guard let dir = Self.environment(pid)["CLAUDE_CONFIG_DIR"], !dir.isEmpty else { continue }
+                let url = ClaudeProfile.url(fromConfig: dir)
+                if !known.contains(url), !found.contains(url) { found.append(url) }
+            }
+            guard !found.isEmpty else { return }
+            DispatchQueue.main.async {
+                for url in found { self?.learnedProfile(ClaudeProfile.configPath(url)) }
+            }
+        }
+    }
+
     /// Brings the terminal running a session forward.
     func focus(_ session: AgentSession) {
         terminal(of: session)?.activate()
@@ -469,6 +537,10 @@ final class AIModel: ObservableObject {
         // File changes can arrive in bursts; one poll in flight is enough.
         guard !polling else { return }
         polling = true
+        if Date().timeIntervalSince(lastLearn) > 10 {
+            lastLearn = Date()
+            learnProfiles()
+        }
         let profiles = profiles
         let opencodePath = settings.opencodeDatabase.map { ($0 as NSString).expandingTildeInPath }
             ?? FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".local/share/opencode/opencode.db").path
@@ -642,6 +714,25 @@ final class AIModel: ObservableObject {
         var mib: [Int32] = [CTL_KERN, KERN_PROC, KERN_PROC_PID, pid]
         guard sysctl(&mib, 4, &info, &size, nil, 0) == 0 else { return 0 }
         return info.kp_eproc.e_ppid
+    }
+
+    /// A process's environment (same user only), read the way `ps -E` does.
+    static func environment(_ pid: pid_t) -> [String: String] {
+        var mib: [Int32] = [CTL_KERN, KERN_PROCARGS2, pid]
+        var size = 0
+        guard sysctl(&mib, 3, nil, &size, nil, 0) == 0, size > 4 else { return [:] }
+        var buffer = [UInt8](repeating: 0, count: size)
+        guard sysctl(&mib, 3, &buffer, &size, nil, 0) == 0, size > 4 else { return [:] }
+        // argc, the executable path, argv, then the environment, all NUL-separated.
+        let argc = buffer.withUnsafeBytes { $0.load(as: Int32.self) }
+        let strings = buffer[4..<size].split(separator: 0, omittingEmptySubsequences: true)
+        var env: [String: String] = [:]
+        for raw in strings.dropFirst(1 + Int(argc)) {
+            let entry = String(decoding: raw, as: UTF8.self)
+            guard let eq = entry.firstIndex(of: "="), eq != entry.startIndex else { continue }
+            env[String(entry[..<eq])] = String(entry[entry.index(after: eq)...])
+        }
+        return env
     }
 
     /// PIDs of processes whose executable name contains `name`.

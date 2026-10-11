@@ -44,6 +44,8 @@ final class AppModel: ObservableObject {
             }
             .store(in: &cancellables)
 
+        ai.learnedProfile = { [weak self] path in self?.addClaudeDir(path) }
+
         notifications.suppressesToast = { [weak self] notification in
             self?.ai.needingYouTerminals.contains(notification.app.lowercased()) ?? false
         }
@@ -113,6 +115,57 @@ final class AppModel: ObservableObject {
         let terminals = ai.needingYouTerminals
         ai.dismissToast()
         if let toast = notifications.toast, terminals.contains(toast.app.lowercased()) { notifications.dismissToast() }
+    }
+
+    // MARK: Claude Code Profiles
+
+    /// Remembers a Profile folder in config.json; showing it again if it was hidden.
+    func addClaudeDir(_ path: String) {
+        let url = ClaudeProfile.url(fromConfig: path)
+        configStore.update { config in
+            config.ai.hiddenClaudeDirs.removeAll { ClaudeProfile.url(fromConfig: $0) == url }
+            var dirs = config.ai.claudeDirs ?? []
+            if !dirs.contains(where: { ClaudeProfile.url(fromConfig: $0) == url }) { dirs.append(path) }
+            config.ai.claudeDirs = dirs
+        }
+    }
+
+    /// Picks a Claude Code config folder in the standard folder panel, on the Mac's own screen.
+    func addClaudeFolder() {
+        let panel = NSOpenPanel()
+        panel.canChooseDirectories = true
+        panel.canChooseFiles = false
+        panel.showsHiddenFiles = true
+        panel.directoryURL = FileManager.default.homeDirectoryForCurrentUser
+        panel.message = "Choose a Claude Code config folder (the one CLAUDE_CONFIG_DIR points to)"
+        panel.prompt = "Add Profile"
+        NSApp.activate()
+        // The primary screen (with the menu bar), never the Edge.
+        if let screen = NSScreen.screens.first {
+            panel.setFrameOrigin(NSPoint(x: screen.visibleFrame.midX - panel.frame.width / 2, y: screen.visibleFrame.midY - panel.frame.height / 2))
+        }
+        panel.begin { [weak self] response in
+            guard response == .OK, let url = panel.url else { return }
+            self?.addClaudeDir(ClaudeProfile.configPath(url))
+            self?.ai.connectionMessage = "Added \(ClaudeProfile(directory: url).name)"
+        }
+    }
+
+    /// Hides a Profile; a Connected one is Disconnected first, or its hooks would keep
+    /// writing events nobody reads.
+    func hideProfile(_ profile: ClaudeProfile) {
+        if let status = ai.connectionStatus[profile.key], status.hooks || status.statusline {
+            ai.disconnect(profile)
+        }
+        configStore.update { config in
+            if !config.ai.hiddenClaudeDirs.contains(where: { ClaudeProfile.url(fromConfig: $0) == profile.directory }) {
+                config.ai.hiddenClaudeDirs.append(profile.configPath)
+            }
+        }
+    }
+
+    func showProfile(_ profile: ClaudeProfile) {
+        configStore.update { $0.ai.hiddenClaudeDirs.removeAll { ClaudeProfile.url(fromConfig: $0) == profile.directory } }
     }
 
     func bringToEdge(_ item: RunningApp) {
