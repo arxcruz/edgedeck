@@ -19,6 +19,11 @@ for forecasts and city search, and [Remote view](#another-macs-dashboard-remote-
 which connects your own Macs to each other over the local network. Everything else
 stays on the Mac.
 
+EdgeDeck also has its own [touch handling](#touch) built in: it takes exclusive control
+of the Edge's touchscreen, so if you use another touch driver or utility for the Edge,
+the two will conflict. Only one can hold the touchscreen at a time. To keep your own
+tool, turn EdgeDeck's touch off in the menu bar's **Touch** submenu.
+
 I haven't tested it extensively for memory leaks or for how much CPU it uses, so keep
 an eye on it if that matters to you.
 
