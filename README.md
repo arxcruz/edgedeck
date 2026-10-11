@@ -9,13 +9,46 @@ mirror of your macOS notifications, and Stream Deck–style launcher buttons.
 > EdgeDeck isn't signed with an Apple Developer ID or notarized, so **macOS blocks it the
 > first time you open each version you download**. Allow it once in System Settings →
 > Privacy & Security → **Open Anyway** (or with `xattr`, see [Download](#download)).
-> After every update you also need to turn its **Accessibility** and **Input Monitoring**
-> permissions off and on again.
+> After every update you also need to grant its permissions again; see
+> [Permissions](#permissions).
 
 Tapping a notification clicks the real macOS banner (so Slack opens the right
 conversation) and, for apps listed in `bringToEdgeOnTap`, brings that app's window to
 the Edge as the Guest app. A strip on the right keeps **Activate** / **Send back** and your newest
 notifications reachable while it's there.
+
+## Permissions
+
+EdgeDeck asks macOS for these in System Settings → Privacy & Security:
+
+| Permission | Needed for | When |
+| --- | --- | --- |
+| **Accessibility** (called **Device Control and Data Access** on macOS 27) | Reading notifications, moving windows, key presses, and touch | Always |
+| **Input Monitoring** | Touch: EdgeDeck reads the touchscreen itself | Always (unless you turn Touch off) |
+| **Calendar** | The Calendar Widget | If you use it |
+| **Automation** (Music, and any app your AppleScript Buttons control) | The Music Widget and AppleScript Buttons | If you use them |
+| **Local Network** | [Remote view](#another-macs-dashboard-remote-view) between your Macs | If you use it |
+| **Screen Recording** | Remote view, on the Mac whose Dashboard is shown | If you use it |
+
+Things that trip people up:
+
+- **Touch only works after both Accessibility and Input Monitoring are on**, and macOS
+  applies Input Monitoring only after EdgeDeck restarts: quit it from the menu bar and
+  open it again. Until then, macOS treats the touchscreen as a mouse, so taps on the Edge
+  (even on EdgeDeck's own permission banner) may not do anything. Use the mouse on the
+  menu bar icon or System Settings instead.
+- **A switch can look on and still not work.** macOS ties permissions to the app's
+  signature, and every release (or rebuild) has a new one. If EdgeDeck still asks after
+  an update, select it in the list, remove it with **–**, then add
+  `/Applications/EdgeDeck.app` back with **+**. Or reset it from Terminal and let
+  EdgeDeck ask again:
+
+  ```sh
+  tccutil reset Accessibility com.arxcruz.edgedeck
+  tccutil reset ListenEvent com.arxcruz.edgedeck
+  ```
+
+- The prompts and System Settings open on your main display, not on the Edge.
 
 ## About this project
 
@@ -114,8 +147,8 @@ You only do this once per version: that copy then opens normally. Every update i
 download, so it needs allowing again.
 
 Because the signature changes with every release, macOS also forgets EdgeDeck's
-Accessibility and Input Monitoring permissions after each update. Turn them off and on
-again (or remove EdgeDeck from the list and add it back) when it asks.
+Accessibility and Input Monitoring permissions after each update; see
+[Permissions](#permissions) for how to grant them again.
 
 To make a release, push a tag such as `v0.2.0`: the
 [Release workflow](.github/workflows/release.yml) builds the DMG
@@ -133,7 +166,8 @@ The build script installs the app to `/Applications` (`NO_INSTALL=1` skips that 
 leaves only `build/EdgeDeck.app`).
 
 On first launch macOS asks for **Accessibility** access (System Settings →
-Privacy & Security → Accessibility → EdgeDeck). It's needed to read
+Privacy & Security → Accessibility, or **Device Control and Data Access** on macOS 27
+→ EdgeDeck); see [Permissions](#permissions). It's needed to read
 Notification Center, move windows and send key presses.
 
 The build is ad-hoc signed, so macOS treats every rebuild as a new app and you
