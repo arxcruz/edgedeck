@@ -79,6 +79,35 @@ turns into a dashed rectangle, the menu says "Waiting for the Xeneon Edge…", a
 layout scaled to fit. Use it with the mouse to look around and edit. It closes when
 the Edge is plugged in. Bringing an app to the Edge needs the real Edge.
 
+## Another Mac's Dashboard (Remote view)
+
+With EdgeDeck on a second Mac on the same network, the Edge can show **that Mac's
+Dashboard** instead of this one's, and switch back, without moving any cables. The
+Mac the Edge is plugged into is the **Host**; the Mac whose Dashboard is showing is the
+**Source**. Either Mac can be either.
+
+- Once another Mac is found, a pill at the Edge's bottom right names the Mac on show
+  (**This Mac** at first). Tap it to choose another; the menu bar's **Show on Edge**
+  does the same.
+- The first time, the two Macs **Pair**: the Edge shows a 6-digit code and the Source
+  asks for it. After that they remember each other (in each Mac's Keychain). Everything
+  between them is encrypted.
+- The Source needs the **Screen Recording** permission (it streams its own Dashboard,
+  which it draws out of sight under the wallpaper) and both need **Local Network**.
+  While it's being watched, the Source keeps its display awake.
+- Touches act on the Source: Buttons, Now Playing and Notifications act on that Mac,
+  and Edit mode edits its Dashboard. Only the Dashboard comes across: nothing can be
+  brought to the Edge from a Remote view.
+- This Mac's Toasts still pop up over a Remote view. Bringing an app or video to the
+  Edge, opening a Notification, or turning on Plain display goes back to this Mac's
+  Dashboard, as does the Source going away (a message says so). EdgeDeck always
+  starts on this Mac's Dashboard.
+
+`EDGEDECK_REMOTE_STATS=1` on the Source logs frames per second, encoding time and bit
+rate. `EDGEDECK_REMOTE_NAME=<name>` renames a Mac on the network (for running a second
+copy as a test Source on one Mac, with `EDGEDECK_NO_EDGE=1`), and
+`EDGEDECK_REMOTE_SHOW=<name>` switches the Edge to that Source as soon as it's found.
+
 ## Pages & layout
 
 The dashboard can have several pages. **Swipe left/right** anywhere on the Edge
