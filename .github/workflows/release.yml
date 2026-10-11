@@ -17,7 +17,7 @@ jobs:
   dmg:
     runs-on: macos-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Version
         run: |
@@ -34,7 +34,7 @@ jobs:
       - name: Build DMG
         run: ./scripts/make-dmg.sh
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: EdgeDeck-${{ env.VERSION }}
           path: build/EdgeDeck-${{ env.VERSION }}.dmg
