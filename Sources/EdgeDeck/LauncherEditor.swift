@@ -158,21 +158,101 @@ final class LauncherEditorState: ObservableObject {
     @Published var page = 0
     @Published var apps: [InstalledApp] = []
     @Published var shortcuts: [String]?
+    /// The Launcher's title being edited, until Save or Cancel; nil when not editing.
+    @Published var titleDraft: String?
+    /// The Button open in the Button view, or a new one not yet on the Launcher.
+    @Published var detail: ButtonDetailTarget?
     var gridFrame: CGRect = .zero
 }
 
-/// Full-screen touch editor for a Launcher: the buttons it has (reorder / remove)
+enum ButtonDetailTarget: Hashable {
+    case existing(UUID)
+    case new
+}
+
+/// Full-screen touch editor for a Launcher: the buttons it has (tap to edit, reorder, remove)
 /// and every installed app, control (media keys, lock…) or shortcut to add or remove with a tap.
 struct LauncherEditor: View {
     @EnvironmentObject var model: AppModel
     let widgetID: UUID
     @StateObject private var state = LauncherEditorState()
+    @FocusState private var titleFocused: Bool
 
     private let cellSize = CGSize(width: 230, height: 64)
     private let spacing: CGFloat = 8
     private var accent: Color { Theme.accent(for: .launcher) }
 
     var body: some View {
+        if let target = state.detail {
+            ButtonDetail(widgetID: widgetID, initial: button(for: target), apps: state.apps, shortcuts: state.shortcuts ?? []) { state.detail = nil }
+                .id(target)
+                .onAppear {
+                    InstalledApps.load { state.apps = $0 }
+                    ShortcutsList.load { state.shortcuts = $0 }
+                }
+        } else {
+            picker
+        }
+    }
+
+    /// The Launcher's title, edited in place: tap to type on the Mac keyboard, then Save or Cancel.
+    /// Empty means the Widget shows "Launcher".
+    @ViewBuilder
+    private func titleField(current: String) -> some View {
+        let editing = state.titleDraft != nil
+        TextField("Launcher", text: Binding(get: { state.titleDraft ?? current }, set: { state.titleDraft = $0 }))
+            .textFieldStyle(.plain)
+            .font(.system(size: 20, weight: .bold, design: .rounded))
+            .padding(.horizontal, 14)
+            .frame(width: 320, height: 44)
+            .background(Theme.tileRaised, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).strokeBorder(titleFocused ? accent : .clear, lineWidth: 2))
+            .focused($titleFocused)
+            .contentShape(Rectangle())
+            .simultaneousGesture(TapGesture().onEnded {
+                if state.titleDraft == nil { state.titleDraft = current }
+                model.beginTyping()
+                DispatchQueue.main.async { titleFocused = true }
+            })
+        if editing {
+            Button { finishTitle(save: false) } label: {
+                Text("Cancel")
+                    .font(.system(size: 15, weight: .bold, design: .rounded))
+                    .padding(.horizontal, 18)
+                    .frame(height: 44)
+                    .background(Theme.tileRaised, in: Capsule())
+                    .contentShape(Capsule())
+            }
+            .buttonStyle(PressableStyle())
+            Button { finishTitle(save: true) } label: {
+                Text("Save")
+                    .font(.system(size: 15, weight: .bold, design: .rounded))
+                    .foregroundStyle(.black)
+                    .padding(.horizontal, 22)
+                    .frame(height: 44)
+                    .background(Color.white, in: Capsule())
+                    .contentShape(Capsule())
+            }
+            .buttonStyle(PressableStyle())
+        }
+    }
+
+    private func finishTitle(save: Bool) {
+        if save, let draft = state.titleDraft?.trimmingCharacters(in: .whitespacesAndNewlines) {
+            model.updateWidget(widgetID) { $0.title = draft.isEmpty ? nil : draft }
+        }
+        state.titleDraft = nil
+        titleFocused = false
+        model.endTyping()
+    }
+
+    private func button(for target: ButtonDetailTarget) -> ButtonConfig? {
+        guard case .existing(let id) = target else { return nil }
+        return model.widget(widgetID)?.buttons?.first { $0.id == id }
+    }
+
+    @ViewBuilder
+    private var picker: some View {
         let widget = model.widget(widgetID)
         let buttons = widget?.buttons ?? []
         let chosen = Self.chosenPaths(buttons)
@@ -181,8 +261,8 @@ struct LauncherEditor: View {
         VStack(alignment: .leading, spacing: 12) {
             HStack(spacing: 12) {
                 Image(systemName: WidgetKind.launcher.symbol).foregroundStyle(accent)
-                Text("\(widget?.title ?? "Launcher") buttons").font(.system(size: 20, weight: .bold, design: .rounded))
-                Text("\(buttons.count) on the launcher · tap below to add or remove").foregroundStyle(Theme.secondaryText)
+                titleField(current: widget?.title ?? "")
+                Text("\(buttons.count) buttons · tap one to edit it, or tap below to add or remove").foregroundStyle(Theme.secondaryText)
                 Spacer()
                 Button { model.launcherEditorWidgetID = nil } label: {
                     Text("Done")
@@ -268,6 +348,14 @@ struct LauncherEditor: View {
         .onAppear {
             InstalledApps.load { state.apps = $0 }
             ShortcutsList.load { state.shortcuts = $0 }
+            // EDGEDECK_SNAPSHOT_BUTTON=new|<index> opens the Button view, for snapshots.
+            if let which = ProcessInfo.processInfo.environment["EDGEDECK_SNAPSHOT_BUTTON"], state.detail == nil {
+                if which == "new" {
+                    state.detail = .new
+                } else if let index = Int(which), buttons.indices.contains(index) {
+                    state.detail = .existing(buttons[index].id)
+                }
+            }
         }
     }
 
@@ -309,19 +397,25 @@ struct LauncherEditor: View {
         })
     }
 
-    /// The launcher's buttons in order, each with move and remove controls.
+    /// The launcher's buttons in order, each with move and remove controls; tap one to edit it.
     private func selectedRow(_ buttons: [ButtonConfig]) -> some View {
         LazyVGrid(columns: [GridItem(.adaptive(minimum: 230), spacing: 8)], alignment: .leading, spacing: 8) {
             ForEach(Array(buttons.enumerated()), id: \.element.id) { index, button in
                 HStack(spacing: 6) {
                     TouchButton(symbol: "chevron.left", size: 32, enabled: index > 0) { move(button.id, by: -1) }
-                    if let symbol = button.symbol {
-                        Image(systemName: symbol).foregroundStyle(button.color.map { Color(hex: $0) } ?? .white).frame(width: 24)
-                    } else {
-                        AppIcon(image: AppLocator.icon(for: button.app ?? button.action.value), size: 24)
+                    Button { state.detail = .existing(button.id) } label: {
+                        HStack(spacing: 6) {
+                            ButtonIcon(button: button, size: 24)
+                            Text(button.title.isEmpty ? "No title" : button.title)
+                                .font(.system(size: 14, weight: .semibold, design: .rounded))
+                                .foregroundStyle(button.title.isEmpty ? Theme.secondaryText : .white)
+                                .lineLimit(1)
+                            Spacer(minLength: 0)
+                        }
+                        .frame(maxHeight: .infinity)
+                        .contentShape(Rectangle())
                     }
-                    Text(button.title).font(.system(size: 14, weight: .semibold, design: .rounded)).lineLimit(1)
-                    Spacer(minLength: 0)
+                    .buttonStyle(PressableStyle())
                     TouchButton(symbol: "chevron.right", size: 32, enabled: index < buttons.count - 1) { move(button.id, by: 1) }
                     TouchButton(symbol: "xmark", tint: Color(hex: "#FF453A"), size: 32) { remove(button.id) }
                 }
@@ -329,6 +423,16 @@ struct LauncherEditor: View {
                 .frame(height: 44)
                 .background(accent.opacity(0.15), in: Capsule())
             }
+            Button { state.detail = .new } label: {
+                Label("New Button", systemImage: "plus")
+                    .font(.system(size: 14, weight: .bold, design: .rounded))
+                    .foregroundStyle(accent)
+                    .frame(maxWidth: .infinity)
+                    .frame(height: 44)
+                    .background(Capsule().strokeBorder(accent.opacity(0.6), style: StrokeStyle(lineWidth: 2, dash: [6, 4])))
+                    .contentShape(Capsule())
+            }
+            .buttonStyle(PressableStyle())
         }
     }
 

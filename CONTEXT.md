@@ -60,7 +60,7 @@ A Widget's position and size on its Page's grid, in whole cells.
 _Avoid_: Slot, rect, bounds
 
 **Editor**:
-A full-screen Edit-mode screen for configuring one Widget (e.g. the City editor, the Launcher editor).
+A full-screen Edit-mode screen for configuring one Widget (e.g. the City editor, the Launcher editor), opened by Tapping that Widget in Edit mode.
 _Avoid_: Picker, settings sheet
 
 **Widget palette**:
@@ -110,7 +110,7 @@ A Widget kind holding a list of Buttons.
 _Avoid_: App grid, shortcut bar
 
 **Button**:
-A tappable entry in a Launcher with a label, an icon and one Action.
+A tappable entry in a Launcher with one Action, an icon, an optional colour and an optional title. A Button with no title shows only its icon.
 _Avoid_: Shortcut, key, launcher item
 
 **Action**:
@@ -118,7 +118,7 @@ Something EdgeDeck can do on the user's behalf (open an app or URL, run a shortc
 _Avoid_: Command, task
 
 **Control**:
-A predefined Button offered in the Launcher editor (volume, media keys, etc.). Not a separate concept from Button.
+A predefined Button offered in the Launcher editor (volume, media keys, etc.). Only a template: adding one copies it into an ordinary Button with no link back, which can then be edited like any other. Not a separate concept from Button.
 _Avoid_: Preset (as a user-facing term)
 
 ### Notifications

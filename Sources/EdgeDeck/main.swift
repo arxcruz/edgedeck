@@ -5,7 +5,9 @@ import SwiftUI
 /// Borderless panel that never takes focus from the app you're working in on
 /// the main display, so taps on the Edge act like Stream Deck presses.
 final class EdgePanel: NSPanel {
-    override var canBecomeKey: Bool { false }
+    /// True only while an Editor's text field is in use.
+    var acceptsKeyboard = false
+    override var canBecomeKey: Bool { acceptsKeyboard }
     override var canBecomeMain: Bool { false }
 }
 
@@ -45,6 +47,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         menuBarCover.isOpaque = true
         menuBarCover.hasShadow = false
         menuBarCover.backgroundColor = NSColor(red: 0.03, green: 0.03, blue: 0.04, alpha: 1)
+
+        model.setKeyboardFocus = { [weak self] on in
+            guard let panel = self?.panel else { return }
+            panel.acceptsKeyboard = on
+            if on { panel.makeKey() }
+        }
 
         setUpStatusItem()
         placePanel()

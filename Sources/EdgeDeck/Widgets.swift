@@ -291,20 +291,31 @@ struct LauncherButton: View {
 
     var body: some View {
         let tint = button.color.map { Color(hex: $0) } ?? .white
-        let appTarget = [.openApp, .bringToEdge].contains(button.action.type) ? button.action.value : nil
+        let appTarget = [.openApp, .bringToEdge].contains(button.action.type) && !button.action.value.isEmpty ? button.action.value : nil
         let missing = appTarget.map { AppLocator.url(for: $0) == nil } ?? false
+        let failed = model.failedButtons.contains(button.id)
         Button { model.run(button) } label: {
             VStack(spacing: 8) {
                 icon(tint: tint)
-                Text(button.title)
-                    .font(.system(size: height > 150 ? 16 : 13, weight: .semibold, design: .rounded))
-                    .foregroundStyle(.white)
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.7)
+                if !button.title.isEmpty {
+                    Text(button.title)
+                        .font(.system(size: height > 150 ? 16 : 13, weight: .semibold, design: .rounded))
+                        .foregroundStyle(.white)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.7)
+                }
             }
             .padding(8)
             .frame(maxWidth: .infinity, minHeight: height, maxHeight: height)
             .background(button.color == nil ? Theme.tileRaised : tint.opacity(0.18), in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+            .overlay {
+                // The Action just failed.
+                if failed {
+                    RoundedRectangle(cornerRadius: 18, style: .continuous).fill(Color(hex: "#FF453A").opacity(0.45))
+                        .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous).strokeBorder(Color(hex: "#FF453A"), lineWidth: 3))
+                }
+            }
+            .animation(.easeOut(duration: 0.2), value: failed)
             .contentShape(RoundedRectangle(cornerRadius: 18))
             .overlay(alignment: .top) {
                 if missing {
@@ -321,14 +332,8 @@ struct LauncherButton: View {
         .disabled(missing)
     }
 
-    @ViewBuilder
     private func icon(tint: Color) -> some View {
-        if let symbol = button.symbol {
-            Image(systemName: symbol).font(.system(size: max(28, height * 0.3), weight: .semibold)).foregroundStyle(tint).frame(height: height * 0.45)
-        } else {
-            let identifier = button.app ?? ([.openApp, .bringToEdge].contains(button.action.type) ? button.action.value : nil)
-            AppIcon(image: identifier.flatMap { AppLocator.icon(for: $0) }, size: max(48, height * 0.45))
-        }
+        ButtonIcon(button: button, size: max(48, height * 0.45), tint: tint)
     }
 }
 

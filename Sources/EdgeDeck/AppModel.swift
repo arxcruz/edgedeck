@@ -17,7 +17,9 @@ final class AppModel: ObservableObject {
     let ai = AIModel()
     let swipe = SwipeState()
 
-    @Published var editing = false
+    @Published var editing = false {
+        didSet { if !editing { endTyping() } }
+    }
     @Published private(set) var currentPageIndex = 0
     @Published private(set) var accessibilityGranted = AXIsProcessTrusted()
 
@@ -110,7 +112,9 @@ final class AppModel: ObservableObject {
 
     /// World Clock or Weather widget whose City editor is open.
     @Published var cityEditorWidgetID: UUID?
-    @Published var launcherEditorWidgetID: UUID?
+    @Published var launcherEditorWidgetID: UUID? {
+        didSet { if launcherEditorWidgetID == nil { endTyping() } }
+    }
     /// A full-screen Editor is open, so horizontal swipes mustn't change pages.
     var editorOpen: Bool { cityEditorWidgetID != nil || launcherEditorWidgetID != nil || ai.connectEditorOpen }
 
@@ -173,8 +177,40 @@ final class AppModel: ObservableObject {
         }
     }
 
+    /// Buttons whose Action just failed; they flash red for a moment.
+    @Published private(set) var failedButtons: Set<UUID> = []
+
     func run(_ button: ButtonConfig) {
-        ActionRunner.run(button.action, guest: guest)
+        ActionRunner.run(button.action, guest: guest) { [weak self] result in
+            guard !result.ok, let self else { return }
+            NSLog("EdgeDeck: \(button.title) failed: \(result.message ?? "") \(result.output)")
+            self.failedButtons.insert(button.id)
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) { self.failedButtons.remove(button.id) }
+        }
+    }
+
+    // MARK: Typing
+
+    /// Whether the dashboard panel takes keystrokes from the physical keyboard (only while a
+    /// text field in an Editor is in use); set by the app delegate.
+    var setKeyboardFocus: ((Bool) -> Void)?
+    @Published private(set) var typing = false
+    /// The app that had the keyboard before, to hand it back.
+    private var typingReturnApp: NSRunningApplication?
+
+    func beginTyping() {
+        guard !typing else { return }
+        typingReturnApp = NSWorkspace.shared.frontmostApplication
+        typing = true
+        setKeyboardFocus?(true)
+    }
+
+    func endTyping() {
+        guard typing else { return }
+        typing = false
+        setKeyboardFocus?(false)
+        typingReturnApp?.activate()
+        typingReturnApp = nil
     }
 
     // MARK: Pages

@@ -121,7 +121,8 @@ struct PageGridView: View {
     }
 }
 
-/// Edit-mode overlay: drag anywhere to move, drag the corner handle to resize, ✕ to remove.
+/// Edit-mode overlay: tap to open the Widget's Editor, drag anywhere to move, drag the corner
+/// handle to resize, ✕ to remove.
 struct WidgetEditChrome: View {
     @EnvironmentObject var model: AppModel
     let widget: WidgetConfig
@@ -146,11 +147,17 @@ struct WidgetEditChrome: View {
                 Text("\(frame.w)×\(frame.h)")
                     .font(.system(size: 12, weight: .medium, design: .rounded))
                     .foregroundStyle(Theme.secondaryText)
+                if openEditor != nil {
+                    Label("Tap to edit", systemImage: "pencil")
+                        .font(.system(size: 13, weight: .bold, design: .rounded))
+                        .foregroundStyle(accent)
+                }
             }
             .foregroundStyle(.white)
             .padding(8)
         }
         .contentShape(Rectangle())
+        .onTapGesture { openEditor?() }
         .gesture(drag(.move))
         .overlay(alignment: .topTrailing) {
             TouchButton(symbol: "xmark", tint: Color(hex: "#FF453A"), size: 40) {
@@ -168,38 +175,23 @@ struct WidgetEditChrome: View {
                 .contentShape(Rectangle())
                 .highPriorityGesture(drag(.resize))
         }
-        .overlay(alignment: .bottomLeading) {
-            if let content = contentEditor {
-                Button(action: content.open) {
-                    Label(content.title, systemImage: "pencil")
-                        .font(.system(size: 16, weight: .bold, design: .rounded))
-                        .foregroundStyle(.black)
-                        .padding(.horizontal, 16)
-                        .frame(height: 44)
-                        .background(accent, in: Capsule())
-                        .padding(6)
-                        .contentShape(Rectangle())
-                }
-                .buttonStyle(PressableStyle())
-            }
-        }
     }
 
-    /// Widgets whose contents have a touch editor get a button for it here (and only
-    /// here, so it can't be hit by accident during normal use).
-    private var contentEditor: (title: String, open: () -> Void)? {
+    /// Opens the Editor of Widgets that have one. Editors open only from Edit mode, so they
+    /// can't be hit by accident during normal use.
+    private var openEditor: (() -> Void)? {
         let id = widget.id
         switch widget.kind {
-        case .launcher: return ("Apps", { model.launcherEditorWidgetID = id })
-        case .worldClock: return ("Cities", { model.cityEditorWidgetID = id })
-        case .weather: return ("City", { model.cityEditorWidgetID = id })
-        case .ai: return ("Connect", { model.ai.connectEditorOpen = true })
+        case .launcher: return { model.launcherEditorWidgetID = id }
+        case .worldClock, .weather: return { model.cityEditorWidgetID = id }
+        case .ai: return { model.ai.connectEditorOpen = true }
         default: return nil
         }
     }
 
     private func drag(_ mode: EditState.Mode) -> some Gesture {
-        DragGesture(minimumDistance: 3, coordinateSpace: .global)
+        // Big enough that a finger's wobble during a Tap doesn't count as a drag.
+        DragGesture(minimumDistance: 8, coordinateSpace: .global)
             .onChanged { value in
                 if edit.dragging != widget.id {
                     edit.dragging = widget.id

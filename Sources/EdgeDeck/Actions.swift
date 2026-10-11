@@ -1,37 +1,101 @@
 import AppKit
 import CoreGraphics
 
+/// How performing an Action went. Scripts and Shortcuts report their exit status and output.
+struct ActionResult {
+    var ok: Bool
+    /// Why it failed, or the exit status of a script.
+    var message: String?
+    /// The first few KB of a script's stdout and stderr.
+    var output = ""
+}
+
 /// Executes the actions bound to launcher buttons.
 enum ActionRunner {
-    static func run(_ action: ActionConfig, guest: GuestAppManager) {
+    static func run(_ action: ActionConfig, guest: GuestAppManager, completion: ((ActionResult) -> Void)? = nil) {
+        let done = completion ?? { _ in }
         switch action.type {
         case .openApp:
-            AppLocator.open(action.value)
+            AppLocator.open(action.value) { app in
+                done(app == nil ? ActionResult(ok: false, message: "App not found: \(action.value)") : ActionResult(ok: true))
+            }
         case .openURL:
-            if let url = URL(string: action.value) { NSWorkspace.shared.open(url) }
+            guard let url = url(from: action.value) else {
+                return done(ActionResult(ok: false, message: "Not a URL: \(action.value)"))
+            }
+            let opened = NSWorkspace.shared.open(url)
+            done(opened ? ActionResult(ok: true) : ActionResult(ok: false, message: "Nothing opens \(url.scheme ?? "") links"))
         case .shell:
-            spawn("/bin/zsh", ["-lc", action.value])
+            spawn("/bin/zsh", ["-lc", action.value], completion: done)
         case .shortcut:
-            spawn("/usr/bin/shortcuts", ["run", action.value])
+            spawn("/usr/bin/shortcuts", ["run", action.value], completion: done)
         case .appleScript:
-            spawn("/usr/bin/osascript", ["-e", action.value])
+            spawn("/usr/bin/osascript", ["-e", action.value], completion: done)
         case .keys:
-            KeySender.send(action.value)
+            done(KeySender.send(action.value) ? ActionResult(ok: true) : ActionResult(ok: false, message: "Unknown keys: \(action.value)"))
         case .bringToEdge:
+            guard AppLocator.url(for: action.value) != nil else {
+                return done(ActionResult(ok: false, message: "App not found: \(action.value)"))
+            }
             guest.bringToEdge(action.value)
+            done(ActionResult(ok: true))
         }
     }
 
-    private static func spawn(_ path: String, _ arguments: [String]) {
+    /// The URL an openURL Action opens. Text with a scheme ("http://localhost", "slack://…",
+    /// "mailto:…") is used as is; anything else is a web address and gets https://.
+    static func url(from text: String) -> URL? {
+        let text = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !text.isEmpty, !text.contains(where: \.isWhitespace) else { return nil }
+        // "host:8080" is a port, not a scheme; schemes have no dots ("www.x.com:443").
+        let hasScheme = text.contains("://")
+            || text.range(of: #"^[A-Za-z][A-Za-z0-9+\-]*:(?!\d)"#, options: .regularExpression) != nil
+        guard let url = URL(string: hasScheme ? text : "https://" + text), url.scheme != nil else { return nil }
+        if !hasScheme && (url.host ?? "").isEmpty { return nil }
+        return url
+    }
+
+    /// Runs a process, reporting its exit status and the start of its output when it exits.
+    private static func spawn(_ path: String, _ arguments: [String], completion: @escaping (ActionResult) -> Void) {
         let process = Process()
         process.executableURL = URL(fileURLWithPath: path)
         process.arguments = arguments
-        process.standardOutput = FileHandle.nullDevice
-        process.standardError = FileHandle.nullDevice
+        let pipe = Pipe()
+        process.standardOutput = pipe
+        process.standardError = pipe
+        let output = OutputBuffer()
+        // Keep draining until EOF (children may hold the pipe open), but only remember the start.
+        pipe.fileHandleForReading.readabilityHandler = { handle in
+            let data = handle.availableData
+            if data.isEmpty { handle.readabilityHandler = nil } else { output.append(data) }
+        }
+        process.terminationHandler = { process in
+            // Give the last output a moment to arrive.
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) {
+                let status = process.terminationStatus
+                completion(ActionResult(ok: status == 0, message: "Exit status \(status)", output: output.text))
+            }
+        }
         do {
             try process.run()
         } catch {
             NSLog("EdgeDeck: failed to run \(path): \(error)")
+            completion(ActionResult(ok: false, message: error.localizedDescription))
+        }
+    }
+
+    private final class OutputBuffer: @unchecked Sendable {
+        private let lock = NSLock()
+        private var data = Data()
+
+        func append(_ more: Data) {
+            lock.lock(); defer { lock.unlock() }
+            if data.count < 8192 { data.append(more.prefix(8192 - data.count)) }
+        }
+
+        var text: String {
+            lock.lock(); defer { lock.unlock() }
+            return String(decoding: data, as: UTF8.self)
         }
     }
 }
@@ -90,17 +154,19 @@ enum AppLocator {
 /// Posts keyboard shortcuts ("cmd+shift+4") and media keys ("playpause") to the frontmost app.
 /// Needs the Accessibility permission.
 enum KeySender {
-    static func send(_ spec: String) {
+    /// Returns false when the spec names an unknown key.
+    @discardableResult
+    static func send(_ spec: String) -> Bool {
         let parts = spec.lowercased().split(separator: "+").map { $0.trimmingCharacters(in: .whitespaces) }
-        guard let keyName = parts.last else { return }
+        guard let keyName = parts.last else { return false }
 
         if parts.count == 1, let media = mediaKeys[keyName] {
             postMediaKey(media)
-            return
+            return true
         }
         guard let keyCode = keyCodes[keyName] else {
             NSLog("EdgeDeck: unknown key '\(keyName)' in '\(spec)'")
-            return
+            return false
         }
         var flags: CGEventFlags = []
         for modifier in parts.dropLast() {
@@ -110,7 +176,9 @@ enum KeySender {
             case "alt", "opt", "option": flags.insert(.maskAlternate)
             case "ctrl", "control": flags.insert(.maskControl)
             case "fn": flags.insert(.maskSecondaryFn)
-            default: NSLog("EdgeDeck: unknown modifier '\(modifier)'")
+            default:
+                NSLog("EdgeDeck: unknown modifier '\(modifier)'")
+                return false
             }
         }
         let source = CGEventSource(stateID: .hidSystemState)
@@ -119,7 +187,50 @@ enum KeySender {
             event?.flags = flags
             event?.post(tap: .cghidEventTap)
         }
+        return true
     }
+
+    /// The spec for a key pressed on the keyboard ("cmd+shift+4"), or nil for a key EdgeDeck can't send.
+    static func spec(keyCode: UInt16, modifiers: NSEvent.ModifierFlags) -> String? {
+        guard let name = keyNames[CGKeyCode(keyCode)] else { return nil }
+        var parts: [String] = []
+        if modifiers.contains(.control) { parts.append("ctrl") }
+        if modifiers.contains(.option) { parts.append("alt") }
+        if modifiers.contains(.shift) { parts.append("shift") }
+        if modifiers.contains(.command) { parts.append("cmd") }
+        return (parts + [name]).joined(separator: "+")
+    }
+
+    /// "cmd+shift+4" as "⌘⇧4", media keys by name ("Play/Pause").
+    static func display(_ spec: String) -> String {
+        let parts = spec.lowercased().split(separator: "+").map { $0.trimmingCharacters(in: .whitespaces) }
+        if parts.count == 1, let media = mediaKeyTitles[parts[0]] { return media }
+        let symbols: [String: String] = ["ctrl": "⌃", "control": "⌃", "alt": "⌥", "opt": "⌥", "option": "⌥",
+                                         "shift": "⇧", "cmd": "⌘", "command": "⌘", "fn": "fn "]
+        let keys: [String: String] = ["return": "↩", "enter": "↩", "tab": "⇥", "space": "Space", "delete": "⌫",
+                                      "backspace": "⌫", "forwarddelete": "⌦", "escape": "⎋", "esc": "⎋",
+                                      "left": "←", "right": "→", "up": "↑", "down": "↓",
+                                      "pageup": "⇞", "pagedown": "⇟", "home": "↖", "end": "↘"]
+        let modifiers = parts.dropLast().map { symbols[$0] ?? $0 }.joined()
+        let key = parts.last.map { keys[$0] ?? $0.uppercased() } ?? ""
+        return modifiers + key
+    }
+
+    /// Media keys in the order the Button view offers them.
+    static let mediaKeyOrder = ["playpause", "previous", "next", "volumedown", "volumeup", "mute", "brightnessdown", "brightnessup"]
+
+    static let mediaKeyTitles: [String: String] = [
+        "playpause": "Play/Pause", "previous": "Previous", "next": "Next", "volumedown": "Volume Down",
+        "volumeup": "Volume Up", "mute": "Mute", "brightnessdown": "Brightness Down", "brightnessup": "Brightness Up",
+    ]
+
+    private static let keyNames: [CGKeyCode: String] = {
+        var names: [CGKeyCode: String] = [:]
+        for (name, code) in keyCodes.sorted(by: { $0.key < $1.key }) where names[code] == nil { names[code] = name }
+        // Prefer these where several names share a key code.
+        names[36] = "return"; names[51] = "delete"; names[53] = "escape"
+        return names
+    }()
 
     private static func postMediaKey(_ key: Int) {
         for down in [true, false] {

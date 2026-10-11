@@ -113,7 +113,7 @@ is a desk clock: the time large with the full date. Cards re-flow to fill
 the widget; when there are too many to stay readable they page (swipe up/down).
 Add as many World Clock widgets as you like, on any page.
 
-In edit mode, tap **✎ Cities** on the widget to pick cities by touch: toggle **Local**, choose a region, page through
+In edit mode, tap the widget to pick cities by touch: toggle **Local**, choose a region, page through
 the cities (or jump with the A–Z index) and tap to add or remove. Selected
 cities appear at the top, where ‹ moves one earlier and ✕ removes it. In
 `config.json` each city is `{ "timeZone": "America/Sao_Paulo", "label": "Office" }`,
@@ -133,7 +133,7 @@ Units follow your macOS region (°C/km/h, or °F/mph for US). Tap the current
 conditions to open Apple Weather.
 
 Each Weather widget forecasts one city, Local (the Mac's current time zone) by
-default. In edit mode tap **✎ City** to pick Local or any city by touch, the same
+default. In edit mode tap the widget to pick Local or any city by touch, the same
 picker World Clock uses. A city is the same thing in both widgets: a time zone,
 an optional label, and optional coordinates (otherwise looked up by name). For a
 place that isn't in the time-zone list, set it in `config.json`:
@@ -194,7 +194,7 @@ and OpenCode's tokens/replies today. Everything is read from files on this Mac.
 
 Out of the box you get busy/idle (Claude Code's own session files) and full
 OpenCode state (its local database). For plan usage and tool-level detail, tap
-**Connect** on the widget (or **✎ Connect** in edit mode) and **Connect** each
+**Connect** on the widget (or tap the widget in edit mode) and **Connect** each
 profile: EdgeDeck backs up its `settings.json`
 (`settings.json.edgedeck-<time>.bak`), then adds hooks and wraps the statusline
 through a small script (`~/Library/Application Support/EdgeDeck/bin/claude-bridge`)
@@ -206,15 +206,27 @@ yourself: `"ai": { "claudeDirs": ["~/.claude-work"] }` in `config.json`
 
 ## Launcher buttons
 
-In edit mode (**Edit**, bottom-left), tap **✎ Apps** on a launcher to edit it by touch
-(an empty launcher also shows **+ Add apps** outside edit mode). The top row shows its buttons
-in order (‹ › to move, ✕ to remove); below, every installed app (from the
+In edit mode (**Edit**, bottom-left), tap a launcher to edit it by touch
+(an empty launcher also shows **+ Add apps** outside edit mode). Tap the title at the top
+to rename the launcher (**Save** / **Cancel**; empty shows "Launcher"). The top row shows its buttons
+in order (‹ › to move, ✕ to remove, tap one to edit it, **+ New Button** for a blank one); below, every installed app (from the
 Applications folders, plus Finder) — tap one to add or remove it. **Running**
 narrows the list to open apps; page with ⌃⌄ / swipes or jump with the A–Z index.
 **Controls** offers ready-made buttons (play/pause, previous/next, volume, mute,
 brightness, screenshot, Spotlight, Mission Control, emoji, force quit, display
-sleep, lock), and **Shortcuts** lists your Shortcuts.app shortcuts. Anything
-else (custom key combos, URLs, scripts) is added in `config.json`:
+sleep, lock), and **Shortcuts** lists your Shortcuts.app shortcuts. A Control is
+only a template: once added it's an ordinary button you can change.
+
+Editing a button sets its **Action** (an app to Open or Bring to Edge, a URL, a
+shortcut, keys, a shell command or AppleScript), title, colour and icon. **Save**
+keeps the changes (**Add to Launcher** for a new button), **Cancel** drops them. The title and
+icon follow the Action until you choose your own; **Icon only** clears the title.
+**Record** captures a key combo from the Mac's keyboard (type combos macOS keeps for
+itself, like `cmd+space`, in the field instead). Text is typed on the Mac's keyboard:
+tapping a field lets the Edge take keystrokes until you leave the button (or tap
+**Stop**). **Try** runs the Action and shows a script's exit status and output. On the
+dashboard, a button whose Action fails flashes red. Everything can also be set in
+`config.json`:
 
 ```json
 {
@@ -240,8 +252,9 @@ else (custom key combos, URLs, scripts) is added in `config.json`:
 | `appleScript` | AppleScript source |
 | `keys` | shortcut like `cmd+shift+4`, or a media key: `playpause`, `next`, `previous`, `volumeup`, `volumedown`, `mute`, `brightnessup`, `brightnessdown` |
 
-`symbol` is any SF Symbol name; without it the app's icon is shown. `color` tints
-the button. Buttons whose app isn't installed are dimmed and marked "Not installed".
+`symbol` is any SF Symbol name; without it the app's icon (or one matching the
+Action) is shown. `color` tints the button (any hex in `config.json`; the editor
+offers ten swatches). An empty `title` shows only the icon. Buttons whose app isn't installed are dimmed and marked "Not installed".
 
 ## Notifications
 
