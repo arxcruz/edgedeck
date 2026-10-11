@@ -473,7 +473,7 @@ private struct RunningAppTile: View {
         .animation(.easeOut(duration: 0.12), value: pressed)
         .contentShape(RoundedRectangle(cornerRadius: 18))
         .onTapGesture { running.bringToFront(item) }
-        .onLongPressGesture(minimumDuration: 0.45) {
+        .onLongPress {
             state.selected = item.id
         } onPressingChanged: { isPressing in
             state.pressing = isPressing ? item.id : nil

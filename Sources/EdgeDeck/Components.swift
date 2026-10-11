@@ -360,3 +360,30 @@ struct ReorderHint: View {
             .foregroundStyle(Theme.secondaryText)
     }
 }
+
+// MARK: Long-press
+
+extension View {
+    /// A Long-press. On the Edge, Edgetap sends nothing while a finger is held and turns
+    /// hold-then-lift into a right click, so a right click counts; so does a held mouse button.
+    func onLongPress(perform action: @escaping () -> Void, onPressingChanged: @escaping (Bool) -> Void = { _ in }) -> some View {
+        onLongPressGesture(minimumDuration: 0.45, perform: action, onPressingChanged: onPressingChanged)
+            .overlay(RightClickCatcher(action: action))
+    }
+}
+
+/// Takes right clicks only; every other event passes through to the views below.
+private struct RightClickCatcher: NSViewRepresentable {
+    let action: () -> Void
+
+    final class CatcherView: NSView {
+        var action: () -> Void = {}
+        override func hitTest(_ point: NSPoint) -> NSView? {
+            NSApp.currentEvent?.type == .rightMouseDown ? super.hitTest(point) : nil
+        }
+        override func rightMouseDown(with event: NSEvent) { action() }
+    }
+
+    func makeNSView(context: Context) -> CatcherView { CatcherView() }
+    func updateNSView(_ view: CatcherView, context: Context) { view.action = action }
+}
