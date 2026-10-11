@@ -7,8 +7,10 @@ mirror of your macOS notifications, and Stream Deck–style launcher buttons.
 
 > [!IMPORTANT]
 > EdgeDeck isn't signed with an Apple Developer ID or notarized, so **macOS blocks it the
-> first time you open each version you download**. Allow it once in System Settings →
-> Privacy & Security → **Open Anyway** (or with `xattr`, see [Download](#download)).
+> first time you open each version you download**. The warning only offers **Move to
+> Trash** or **Done**: click **Done**, then go to System Settings → Privacy & Security,
+> scroll down and click **Open Anyway** (see [Download](#download) for the steps, or the
+> `xattr` shortcut).
 > After every update you also need to grant its permissions again; see
 > [Permissions](#permissions).
 
@@ -24,7 +26,7 @@ EdgeDeck asks macOS for these in System Settings → Privacy & Security:
 | Permission | Needed for | When |
 | --- | --- | --- |
 | **Accessibility** (called **Device Control and Data Access** on macOS 27) | Reading notifications, moving windows, key presses, and touch | Always |
-| **Input Monitoring** | Typing in Editors on the Edge, and touch on macOS 26 and earlier | Always |
+| **Input Monitoring** | Touch, on some older macOS versions | Only if macOS asks; macOS 27 doesn't need it |
 | **Calendar** | The Calendar Widget | If you use it |
 | **Automation** (Music, and any app your AppleScript Buttons control) | The Music Widget and AppleScript Buttons | If you use them |
 | **Local Network** | [Remote view](#another-macs-dashboard-remote-view) between your Macs | If you use it |
@@ -32,14 +34,11 @@ EdgeDeck asks macOS for these in System Settings → Privacy & Security:
 
 Things that trip people up:
 
-- **Touch needs Accessibility** (and, on macOS 26 and earlier, Input Monitoring; macOS
-  applies that only after EdgeDeck restarts, so quit it from the menu bar and open it
-  again). Until then, macOS treats the touchscreen as a mouse, so taps on the Edge (even
+- **Touch needs Accessibility.** If your macOS also asks for Input Monitoring, allow it
+  and then quit EdgeDeck from the menu bar and open it again: macOS applies that one only
+  after a restart. Until then, macOS treats the touchscreen as a mouse, so taps on the Edge (even
   on EdgeDeck's own permission banner) may not do anything. Use the mouse on the menu bar
   icon or System Settings instead.
-- **On macOS 27, macOS doesn't ask for Input Monitoring**, but typing in Editors on the
-  Edge still needs it: add EdgeDeck yourself in Privacy & Security → Input Monitoring
-  with **+**.
 - **A switch can look on and still not work.** macOS ties permissions to the app's
   signature, and every release (or rebuild) has a new one. If EdgeDeck still asks after
   an update, select it in the list, remove it with **–**, then add
@@ -138,9 +137,20 @@ page, open it and drag **EdgeDeck** to **Applications**. It runs on macOS 14 or 
 on Apple silicon and Intel Macs.
 
 The release is **not notarized**. It's built by GitHub Actions and ad-hoc signed, with no
-developer certificate, so macOS blocks it the first time ("can't be opened" or "is
-damaged"). To allow it, open it once and then go to System Settings → Privacy & Security
-and click **Open Anyway** (right-click → Open no longer does it since macOS 15), or run:
+developer certificate, so macOS blocks it the first time. To open it:
+
+1. Open **EdgeDeck** from Applications. macOS says it can't verify that EdgeDeck is free
+   of malware, and offers only **Move to Trash** or **Done**. Click **Done** (not Move to
+   Trash).
+2. Open **System Settings → Privacy & Security** and scroll down to the **Security**
+   section. It says "EdgeDeck" was blocked; click **Open Anyway**.
+3. Enter your Mac's password (or use Touch ID) to confirm, then click **Open Anyway** once
+   more if macOS asks.
+
+The **Open Anyway** button only shows for about an hour after step 1, so if it isn't there,
+open EdgeDeck again and go back. Right-click → Open no longer skips this since macOS 15.
+
+Or skip all of that with one Terminal command after copying EdgeDeck to Applications:
 
 ```sh
 xattr -dr com.apple.quarantine /Applications/EdgeDeck.app
@@ -200,9 +210,9 @@ to be the separate Edgetap app) and decides at touch-down where each touch goes:
 | Rest ~0.5 s, then drag | Click-and-drag (move windows, select text) |
 | Rest ~0.5 s, then lift | Right-click |
 
-Touch needs **Input Monitoring** (System Settings → Privacy & Security → Input
-Monitoring → EdgeDeck) on top of Accessibility; a banner on the Edge says so until
-it's granted. The menu bar's **Touch** submenu turns it on or off (off hands the
+Touch needs Accessibility, and on some older macOS versions also **Input Monitoring**
+(System Settings → Privacy & Security → Input Monitoring → EdgeDeck); EdgeDeck asks for
+it only when macOS says it's missing, and a banner on the Edge says so until it's granted. The menu bar's **Touch** submenu turns it on or off (off hands the
 touchscreen back to macOS) and has scroll speed, reverse direction, momentum, flick
 acceleration, the hold time and hiding the cursor. If the old Edgetap app is
 running, EdgeDeck offers to quit it, since only one app can hold the touchscreen.
