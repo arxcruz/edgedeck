@@ -70,6 +70,8 @@ final class MusicModel: ObservableObject {
     private var libraryLoaded = false
     private var artworkRequested = Set<String>()
     private var lastDevicesRefresh = Date.distantPast
+    /// No scripts before this: Music may be quitting (see `start`).
+    private var quietUntil = Date.distantPast
 
     var isRunning: Bool {
         NSRunningApplication.runningApplications(withBundleIdentifier: Self.bundleID).contains { !$0.isTerminated }
@@ -86,7 +88,14 @@ final class MusicModel: ObservableObject {
             }
         }
         // Library edits (new playlists, albums) show up when Music says they happened.
-        DistributedNotificationCenter.default().addObserver(forName: Notification.Name("com.apple.Music.playerInfo"), object: nil, queue: .main) { [weak self] _ in
+        DistributedNotificationCenter.default().addObserver(forName: Notification.Name("com.apple.Music.playerInfo"), object: nil, queue: .main) { [weak self] note in
+            // Quitting, Music sends a bare "Stopped" (no track fields) while it's still shutting
+            // down. A script sent then reaches it as it exits, and AppleScript relaunches it to
+            // retry, so stay quiet until it's gone.
+            if (note.userInfo?["Player State"] as? String) == "Stopped", (note.userInfo?.count ?? 0) <= 1 {
+                self?.quietUntil = Date().addingTimeInterval(3)
+                return
+            }
             self?.poll()
         }
     }
@@ -339,7 +348,7 @@ final class MusicModel: ObservableObject {
         """
         queue.async { [weak self] in
             guard let self else { return }
-            guard self.isRunning else {
+            guard self.isRunning, Date() >= self.quietUntil else {
                 DispatchQueue.main.async { completion(nil) }
                 return
             }
