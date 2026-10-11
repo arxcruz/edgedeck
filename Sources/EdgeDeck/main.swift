@@ -328,6 +328,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
         menu.addItem(editItem)
         remoteItem = NSMenuItem(title: "Show on Edge", action: nil, keyEquivalent: "")
         remoteItem.submenu = NSMenu()
+        remoteItem.submenu?.delegate = self
         menu.addItem(remoteItem)
         plainItem = NSMenuItem(title: "Use as Plain Display", action: #selector(togglePlainDisplay), keyEquivalent: "d")
         menu.addItem(plainItem)
@@ -338,6 +339,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
         menu.addItem(.separator())
         touchItem = NSMenuItem(title: "Touch", action: nil, keyEquivalent: "")
         touchItem.submenu = NSMenu()
+        touchItem.submenu?.delegate = self
         menu.addItem(touchItem)
         menu.addItem(.separator())
         loginItem = NSMenuItem(title: "Open at Login", action: #selector(toggleOpenAtLogin), keyEquivalent: "")
@@ -346,6 +348,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
         menu.addItem(NSMenuItem(title: "Quit EdgeDeck", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q"))
         for item in menu.items where item.action != #selector(NSApplication.terminate(_:)) { item.target = self }
         statusItem.menu = menu
+        refreshLoginItem()
 
         model.$editing.sink { [weak self] editing in self?.editItem.state = editing ? .on : .off }.store(in: &cancellables)
         model.$plainDisplay.sink { [weak self] plain in self?.plainItem.state = plain ? .on : .off }.store(in: &cancellables)
@@ -362,18 +365,37 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
         previewItem.state = previewWindow != nil ? .on : .off
     }
 
+    /// Each submenu is filled when it opens, not every time the main menu does.
     func menuNeedsUpdate(_ menu: NSMenu) {
-        if let submenu = touchItem.submenu { fillTouchMenu(submenu) }
-        if let submenu = remoteItem.submenu { fillRemoteMenu(submenu) }
+        if menu === touchItem.submenu {
+            fillTouchMenu(menu)
+        } else if menu === remoteItem.submenu {
+            fillRemoteMenu(menu)
+        } else {
+            // Shows the last known Open at Login state at once and checks again in the background.
+            refreshLoginItem()
+        }
+    }
+
+    /// SMAppService.status is a synchronous round trip to another process (~13 ms), so it's
+    /// never asked on the main thread while a menu is opening.
+    private func refreshLoginItem() {
+        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+            let status = SMAppService.mainApp.status
+            DispatchQueue.main.async { self?.showLoginItem(status) }
+        }
+    }
+
+    private func showLoginItem(_ status: SMAppService.Status) {
         // Open at Login must point at one stable copy, which scripts/build.sh installs.
         let installed = Bundle.main.bundlePath.hasPrefix("/Applications/")
-        switch SMAppService.mainApp.status {
+        switch status {
         case .enabled: loginItem.state = .on
         case .requiresApproval: loginItem.state = .mixed
         default: loginItem.state = .off
         }
         loginItem.title = !installed ? "Open at Login (run from /Applications)"
-            : SMAppService.mainApp.status == .requiresApproval ? "Open at Login (allow in System Settings)" : "Open at Login"
+            : status == .requiresApproval ? "Open at Login (allow in System Settings)" : "Open at Login"
         loginItem.isEnabled = installed
     }
 
@@ -385,6 +407,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
             NSLog("EdgeDeck: Open at Login failed: \(error)")
             if service.status == .requiresApproval { SMAppService.openSystemSettingsLoginItems() }
         }
+        refreshLoginItem()
     }
 
     // MARK: Remote view
