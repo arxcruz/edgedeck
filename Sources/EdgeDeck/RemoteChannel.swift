@@ -54,6 +54,13 @@ enum RemoteWire {
         ProcessInfo.processInfo.environment["EDGEDECK_REMOTE_NAME"] ?? Host.current().localizedName ?? "Mac"
     }
 
+    /// TCP without Nagle's algorithm: a touch is a few bytes and must not wait to be batched.
+    static var parameters: NWParameters {
+        let tcp = NWProtocolTCP.Options()
+        tcp.noDelay = true
+        return NWParameters(tls: nil, tcp: tcp)
+    }
+
     /// Identifies this Mac to Sources it's Paired with.
     static var localID: UUID {
         let key = "remote.hostID"

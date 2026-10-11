@@ -66,7 +66,7 @@ final class RemoteHost: ObservableObject {
     /// Shows `name`'s Dashboard on the Edge, Pairing first if needed.
     func show(_ name: String) {
         end()
-        let channel = RemoteChannel(NWConnection(to: .service(name: name, type: RemoteWire.serviceType, domain: "local.", interface: nil), using: .tcp))
+        let channel = RemoteChannel(NWConnection(to: .service(name: name, type: RemoteWire.serviceType, domain: "local.", interface: nil), using: RemoteWire.parameters))
         self.channel = channel
         current = name
         lastHeard = Date()
@@ -333,6 +333,7 @@ final class RemoteSource: ObservableObject {
     private var lastHeard = Date()
     private var timer: Timer?
     private var awake: IOPMAssertionID = 0
+    private let stats = StreamStats()
 
     /// Whether a Host is watching (Takeovers are offered only when not).
     @Published private(set) var isWatched = false
@@ -343,7 +344,7 @@ final class RemoteSource: ObservableObject {
 
     func start() {
         do {
-            let listener = try NWListener(using: .tcp)
+            let listener = try NWListener(using: RemoteWire.parameters)
             listener.service = NWListener.Service(name: RemoteWire.localName, type: RemoteWire.serviceType)
             listener.newConnectionHandler = { [weak self] connection in self?.accept(connection) }
             listener.stateUpdateHandler = { state in
@@ -474,10 +475,10 @@ final class RemoteSource: ObservableObject {
             let config = SCStreamConfiguration()
             config.width = width
             config.height = height
-            config.minimumFrameInterval = CMTime(value: 1, timescale: 30)
+            config.minimumFrameInterval = CMTime(value: 1, timescale: 60)
             config.pixelFormat = kCVPixelFormatType_420YpCbCr8BiPlanarVideoRange
             config.showsCursor = false
-            config.queueDepth = 4
+            config.queueDepth = 3
             guard makeEncoder(width: width, height: height) else { return stop() }
             let output = StreamOutput { [weak self] buffer in self?.encode(buffer) }
             let stream = SCStream(filter: SCContentFilter(desktopIndependentWindow: target), configuration: config, delegate: nil)
@@ -493,15 +494,21 @@ final class RemoteSource: ObservableObject {
 
     private func makeEncoder(width: Int, height: Int) -> Bool {
         var session: VTCompressionSession?
-        let status = VTCompressionSessionCreate(allocator: nil, width: Int32(width), height: Int32(height), codecType: kCMVideoCodecType_HEVC,
-                                                encoderSpecification: nil, imageBufferAttributes: nil, compressedDataAllocator: nil,
-                                                outputCallback: nil, refcon: nil, compressionSessionOut: &session)
-        guard status == noErr, let session else { return false }
+        // Low-latency rate control: no frames held back for look-ahead. Fall back if the Mac's encoder lacks it.
+        for specification in [[kVTVideoEncoderSpecification_EnableLowLatencyRateControl: true] as CFDictionary, nil] {
+            let status = VTCompressionSessionCreate(allocator: nil, width: Int32(width), height: Int32(height), codecType: kCMVideoCodecType_HEVC,
+                                                    encoderSpecification: specification, imageBufferAttributes: nil, compressedDataAllocator: nil,
+                                                    outputCallback: nil, refcon: nil, compressionSessionOut: &session)
+            if status == noErr { break }
+            NSLog("EdgeDeck: Remote view encoder (low latency \(specification != nil)) failed: \(status)")
+        }
+        guard let session else { return false }
         let properties: [CFString: Any] = [
             kVTCompressionPropertyKey_RealTime: true,
             kVTCompressionPropertyKey_AllowFrameReordering: false,
-            kVTCompressionPropertyKey_ExpectedFrameRate: 30,
-            kVTCompressionPropertyKey_AverageBitRate: 12_000_000,
+            kVTCompressionPropertyKey_ExpectedFrameRate: 60,
+            kVTCompressionPropertyKey_AverageBitRate: 16_000_000,
+            kVTCompressionPropertyKey_PrioritizeEncodingSpeedOverQuality: true,
             kVTCompressionPropertyKey_MaxKeyFrameIntervalDuration: 5,
             kVTCompressionPropertyKey_ProfileLevel: kVTProfileLevel_HEVC_Main_AutoLevel,
         ]
@@ -519,10 +526,12 @@ final class RemoteSource: ObservableObject {
             forceKeyFrame = false
             options = [kVTEncodeFrameOptionKey_ForceKeyFrame: true] as CFDictionary
         }
+        let started = CACurrentMediaTime()
         VTCompressionSessionEncodeFrame(encoder, imageBuffer: image, presentationTimeStamp: CMSampleBufferGetPresentationTimeStamp(buffer),
                                         duration: .invalid, frameProperties: options, infoFlagsOut: nil) { [weak self] status, _, sample in
             guard status == noErr, let sample else { return }
             self?.send(sample)
+            self?.stats.add(encode: CACurrentMediaTime() - started, bytes: CMSampleBufferGetTotalSampleSize(sample))
         }
     }
 
@@ -653,5 +662,23 @@ struct SourceChooser: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(PressableStyle())
+    }
+}
+
+/// Debug aid: EDGEDECK_REMOTE_STATS=1 logs frames per second, encode time and bit rate every 2 s.
+private final class StreamStats {
+    private let enabled = ProcessInfo.processInfo.environment["EDGEDECK_REMOTE_STATS"] == "1"
+    private let lock = NSLock()
+    private var frames = 0, bytes = 0, encode = 0.0, since = CACurrentMediaTime()
+
+    func add(encode seconds: Double, bytes size: Int) {
+        guard enabled else { return }
+        lock.lock(); defer { lock.unlock() }
+        frames += 1; bytes += size; encode += seconds
+        let elapsed = CACurrentMediaTime() - since
+        guard elapsed >= 2 else { return }
+        NSLog("EdgeDeck: Remote view stats: %.0f fps, encode %.1f ms, %.1f Mbit/s",
+              Double(frames) / elapsed, encode / Double(frames) * 1000, Double(bytes) * 8 / elapsed / 1_000_000)
+        frames = 0; bytes = 0; encode = 0; since = CACurrentMediaTime()
     }
 }
