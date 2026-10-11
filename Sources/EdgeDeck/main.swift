@@ -43,6 +43,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
     /// Dashboard at, hidden under the wallpaper.
     private var remoteWatchSize: CGSize?
     private var remoteItem: NSMenuItem!
+    /// While this Mac's keyboard types into the Source: the app that had it, to hand it back.
+    private var remoteTypingReturnApp: NSRunningApplication?
     private var menuBarCover: EdgePanel!
     private var cancellables = Set<AnyCancellable>()
     private lazy var scrollRecognizer = ScrollSwipeRecognizer(model: model, swipe: model.swipe)
@@ -97,6 +99,25 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
             self.placePanel()
             return self.panel
         }
+        // A text field on the Source is in use: this Mac's keyboard goes to the stream, which
+        // forwards it. Afterwards the keyboard goes back to the app that had it.
+        model.remoteHost.$sourceTyping
+            .removeDuplicates()
+            .dropFirst()
+            .sink { [weak self] typing in
+                guard let self else { return }
+                self.remotePanel.acceptsKeyboard = typing
+                if typing {
+                    self.remoteTypingReturnApp = NSWorkspace.shared.frontmostApplication
+                    self.remotePanel.makeKey()
+                    self.remotePanel.makeFirstResponder(self.remotePanel.contentView)
+                } else {
+                    self.remotePanel.resignKey()
+                    self.remoteTypingReturnApp?.activate()
+                    self.remoteTypingReturnApp = nil
+                }
+            }
+            .store(in: &cancellables)
         model.remoteSource.onPairRequest = { [weak self] hostName, answer in self?.askForPairingCode(hostName, answer) }
 
         // Blank cover over the menu bar on the Edge only. It's opaque to clicks so taps

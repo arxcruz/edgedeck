@@ -90,6 +90,9 @@ final class AppModel: ObservableObject {
         $editing
             .sink { [weak self] editing in self?.remoteSource.editing = editing }
             .store(in: &cancellables)
+        $typing
+            .sink { [weak self] typing in self?.remoteSource.typing = typing }
+            .store(in: &cancellables)
 
         music.$message
             .compactMap { $0 }

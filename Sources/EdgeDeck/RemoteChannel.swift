@@ -36,9 +36,15 @@ enum RemoteWire {
         case touch
         /// Either way, twice a second: the other side is still there.
         case ping
-        /// Source → Host: `[editing]`, so the Host hides its Source pill over the Edit toolbar.
+        /// Source → Host: `[editing][typing]`. Editing hides the Host's Source pill (it would cover
+        /// the Edit toolbar); typing (a text field is in use) makes the Host forward its keyboard.
         case state
+        /// Host → Source: one key event, `[type][key code: 2][modifiers: 4][repeat]` then the
+        /// characters and the characters ignoring modifiers, each `[length: 2][UTF-8]`.
+        case key
     }
+
+    enum KeyType: UInt8 { case down, up, flagsChanged }
 
     enum HelloStatus: UInt8 {
         case paired = 0

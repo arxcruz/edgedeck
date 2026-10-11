@@ -98,6 +98,9 @@ Mac the Edge is plugged into is the **Host**; the Mac whose Dashboard is showing
 - Touches act on the Source: Buttons, Now Playing and Notifications act on that Mac,
   and Edit mode edits its Dashboard. Only the Dashboard comes across: nothing can be
   brought to the Edge from a Remote view.
+- Text fields in its Editors take either Mac's keyboard: this Mac's is forwarded while a
+  field is in use (and handed back to your app afterwards), and the Source's own works
+  too. Pasting uses the Source's clipboard.
 - This Mac's Toasts still pop up over a Remote view. Bringing an app or video to the
   Edge, opening a Notification, or turning on Plain display goes back to this Mac's
   Dashboard, as does the Source going away (a message says so). EdgeDeck always

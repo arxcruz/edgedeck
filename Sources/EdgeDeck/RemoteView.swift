@@ -28,6 +28,8 @@ final class RemoteHost: ObservableObject {
     @Published var chooserOpen = false
     /// The Source is in Edit mode: its toolbar is where the Source pill would be.
     @Published private(set) var sourceEditing = false
+    /// A text field on the Source is in use: this Mac's keyboard types into it.
+    @Published private(set) var sourceTyping = false
     /// A Remote view ended on its own; the reason, for a Toast.
     var onProblem: (String) -> Void = { NSLog("EdgeDeck: Remote view: \($0)") }
     /// The Dashboard size the Source should draw at.
@@ -103,6 +105,7 @@ final class RemoteHost: ObservableObject {
         display.sampleBufferRenderer.flush(removingDisplayedImage: true) {}
         if pairingCode != nil { pairingCode = nil }
         if sourceEditing { sourceEditing = false }
+        if sourceTyping { sourceTyping = false }
         if current != nil { current = nil }
     }
 
@@ -112,6 +115,27 @@ final class RemoteHost: ObservableObject {
         payload.append(Float32(point.x).bitPattern.bigEndianData)
         payload.append(Float32(point.y).bitPattern.bigEndianData)
         channel?.send(.touch, payload)
+    }
+
+    func sendKey(_ event: NSEvent) {
+        guard streaming, sourceTyping else { return }
+        let type: RemoteWire.KeyType
+        switch event.type {
+        case .keyDown: type = .down
+        case .keyUp: type = .up
+        case .flagsChanged: type = .flagsChanged
+        default: return
+        }
+        var payload = Data([type.rawValue])
+        payload.append(event.keyCode.bigEndianData)
+        payload.append(UInt32(truncatingIfNeeded: event.modifierFlags.rawValue).bigEndianData)
+        payload.append(type != .flagsChanged && event.isARepeat ? 1 : 0)
+        for text in type == .flagsChanged ? ["", ""] : [event.characters ?? "", event.charactersIgnoringModifiers ?? ""] {
+            let bytes = Data(text.utf8)
+            payload.append(UInt16(bytes.count).bigEndianData)
+            payload.append(bytes)
+        }
+        channel?.send(.key, payload)
     }
 
     private func tick() {
@@ -161,6 +185,7 @@ final class RemoteHost: ObservableObject {
             if let format, let sample = Self.sampleBuffer(payload, format: format) { enqueue(sample) }
         case .state:
             sourceEditing = payload.first == 1
+            sourceTyping = payload.count >= 2 && payload[payload.startIndex + 1] == 1
         default:
             break
         }
@@ -253,6 +278,16 @@ final class RemoteStreamView: NSView {
     required init?(coder: NSCoder) { fatalError("not used") }
 
     override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
+    override var acceptsFirstResponder: Bool { true }
+    // While a text field on the Source is in use, this Mac's keyboard types into it.
+    override func keyDown(with event: NSEvent) { host.sendKey(event) }
+    override func keyUp(with event: NSEvent) { host.sendKey(event) }
+    override func flagsChanged(with event: NSEvent) { host.sendKey(event) }
+    override func performKeyEquivalent(with event: NSEvent) -> Bool {
+        guard host.sourceTyping, event.type == .keyDown else { return false }
+        host.sendKey(event)
+        return true
+    }
     override func mouseDown(with event: NSEvent) { send(.down, event) }
     override func mouseDragged(with event: NSEvent) { send(.move, event) }
     override func mouseUp(with event: NSEvent) { send(.up, event) }
@@ -339,7 +374,16 @@ final class RemoteSource: ObservableObject {
     @Published private(set) var isWatched = false
     /// This Mac's Dashboard is in Edit mode; the Host is told while it watches.
     var editing = false {
-        didSet { if editing != oldValue, window != nil { channel?.send(.state, Data([editing ? 1 : 0])) } }
+        didSet { if editing != oldValue { reportState() } }
+    }
+    /// A text field in an Editor is in use; the Host then forwards its keyboard.
+    var typing = false {
+        didSet { if typing != oldValue { reportState() } }
+    }
+
+    private func reportState() {
+        guard window != nil else { return }
+        channel?.send(.state, Data([editing ? 1 : 0, typing ? 1 : 0]))
     }
 
     func start() {
@@ -414,6 +458,8 @@ final class RemoteSource: ObservableObject {
             let x = CGFloat(Float32(bitPattern: payload.readInteger(at: 2, as: UInt32.self)))
             let y = CGFloat(Float32(bitPattern: payload.readInteger(at: 6, as: UInt32.self)))
             touch(phase, x: x, y: y, clickCount: Int(payload[payload.startIndex + 1]))
+        case .key:
+            key(payload)
         default:
             break
         }
@@ -429,7 +475,7 @@ final class RemoteSource: ObservableObject {
         guard let window = onWatch(size) else { return stop() }
         self.window = window
         isWatched = true
-        channel?.send(.state, Data([editing ? 1 : 0]))
+        reportState()
         // A sleeping display stops the capture, so keep it awake while watched.
         IOPMAssertionCreateWithName(kIOPMAssertionTypePreventUserIdleDisplaySleep as CFString, IOPMAssertionLevel(kIOPMAssertionLevelOn),
                                     "EdgeDeck Remote view" as CFString, &awake)
@@ -560,6 +606,36 @@ final class RemoteSource: ObservableObject {
         guard CMBlockBufferGetDataPointer(data, atOffset: 0, lengthAtOffsetOut: nil, totalLengthOut: &length, dataPointerOut: &pointer) == noErr,
               let pointer else { return }
         channel.send(.frame, Data(bytes: pointer, count: length))
+    }
+
+    /// A keystroke from the Host's keyboard, through the event queue like a real one (so Record
+    /// sees it too), to the Dashboard panel, which has the keyboard while typing.
+    private func key(_ payload: Data) {
+        guard let window, typing, payload.count >= 8, let type = RemoteWire.KeyType(rawValue: payload[payload.startIndex]) else { return }
+        let keyCode = payload.readInteger(at: 1, as: UInt16.self)
+        let modifiers = NSEvent.ModifierFlags(rawValue: UInt(payload.readInteger(at: 3, as: UInt32.self)))
+        let isRepeat = payload[payload.startIndex + 7] == 1
+        var offset = 8
+        var texts: [String] = []
+        for _ in 0..<2 {
+            guard offset + 2 <= payload.count else { return }
+            let length = Int(payload.readInteger(at: offset, as: UInt16.self))
+            offset += 2
+            guard offset + length <= payload.count else { return }
+            texts.append(String(decoding: payload.subdata(in: payload.startIndex + offset ..< payload.startIndex + offset + length), as: UTF8.self))
+            offset += length
+        }
+        let event: NSEvent?
+        if type == .flagsChanged {
+            event = NSEvent.keyEvent(with: .flagsChanged, location: .zero, modifierFlags: modifiers, timestamp: ProcessInfo.processInfo.systemUptime,
+                                     windowNumber: window.windowNumber, context: nil, characters: "", charactersIgnoringModifiers: "",
+                                     isARepeat: false, keyCode: keyCode)
+        } else {
+            event = NSEvent.keyEvent(with: type == .down ? .keyDown : .keyUp, location: .zero, modifierFlags: modifiers,
+                                     timestamp: ProcessInfo.processInfo.systemUptime, windowNumber: window.windowNumber, context: nil,
+                                     characters: texts[0], charactersIgnoringModifiers: texts[1], isARepeat: isRepeat, keyCode: keyCode)
+        }
+        if let event { NSApp.postEvent(event, atStart: false) }
     }
 
     /// A touch from the Host, as a mouse event for the Dashboard panel (the cursor never moves).
