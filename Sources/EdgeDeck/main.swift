@@ -335,7 +335,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
         menu.addItem(NSMenuItem(title: "Open config.json", action: #selector(openConfig), keyEquivalent: ","))
         menu.addItem(NSMenuItem(title: "Reload Config", action: #selector(reloadConfig), keyEquivalent: "r"))
         menu.addItem(NSMenuItem(title: "Send Back Guest App", action: #selector(sendBack), keyEquivalent: "u"))
-        menu.addItem(NSMenuItem(title: "Accessibility Settings…", action: #selector(openAccessibility), keyEquivalent: ""))
+        menu.addItem(NSMenuItem(title: "\(AppModel.accessibilityName) Settings…", action: #selector(openAccessibility), keyEquivalent: ""))
         menu.addItem(.separator())
         touchItem = NSMenuItem(title: "Touch", action: nil, keyEquivalent: "")
         touchItem.submenu = NSMenu()
@@ -459,7 +459,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
         menu.addItem(status)
         switch touch.status {
         case .needsInputMonitoring: menu.addItem(MenuAction("Open Input Monitoring Settings…") { Self.openPrivacy("Privacy_ListenEvent") })
-        case .needsAccessibility: menu.addItem(MenuAction("Open Accessibility Settings…") { Self.openPrivacy("Privacy_Accessibility") })
+        case .needsAccessibility: menu.addItem(MenuAction("Open \(AppModel.accessibilityName) Settings…") { Self.openPrivacy("Privacy_Accessibility") })
         case .edgetapRunning: menu.addItem(MenuAction("Quit Edgetap") { Self.quitEdgetap() })
         default: break
         }

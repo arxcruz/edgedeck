@@ -136,6 +136,11 @@ final class AppModel: ObservableObject {
         _ = AXIsProcessTrustedWithOptions(options)
     }
 
+    /// What System Settings calls the Accessibility permission: macOS 27 renamed it.
+    static var accessibilityName: String {
+        ProcessInfo.processInfo.operatingSystemVersion.majorVersion >= 27 ? "Device Control and Data Access" : "Accessibility"
+    }
+
     func openAccessibilitySettings() {
         NSWorkspace.shared.open(URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility")!)
     }

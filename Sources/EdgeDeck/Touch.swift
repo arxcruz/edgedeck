@@ -85,7 +85,7 @@ enum TouchStatus: Equatable {
         case .running: "Touch active on the Edge"
         case .off: "Touch is off (macOS handles the touchscreen)"
         case .noEdge: "Waiting for the Edge"
-        case .needsAccessibility: "Touch needs the Accessibility permission"
+        case .needsAccessibility: "Touch needs the \(AppModel.accessibilityName) permission"
         case .needsInputMonitoring: "Touch needs the Input Monitoring permission"
         case .edgetapRunning: "Edgetap is handling touch — quit it to let EdgeDeck"
         case .busy: "Another program is using the touchscreen"

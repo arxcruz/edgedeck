@@ -78,7 +78,7 @@ struct DashboardView: View {
             }
 
             if !model.accessibilityGranted {
-                PermissionBanner(text: "EdgeDeck needs Accessibility access for notifications, window moving and key presses. Tap to open Settings.") {
+                PermissionBanner(text: "EdgeDeck needs the \(AppModel.accessibilityName) permission for notifications, window moving, key presses and touch. Tap to open Settings.") {
                     model.openAccessibilitySettings()
                 }
                 .padding(.top, 20)
