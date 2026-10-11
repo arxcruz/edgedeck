@@ -364,8 +364,8 @@ struct ReorderHint: View {
 // MARK: Long-press
 
 extension View {
-    /// A Long-press. On the Edge, Edgetap sends nothing while a finger is held and turns
-    /// hold-then-lift into a right click, so a right click counts; so does a held mouse button.
+    /// A Long-press: a held touch (EdgeDeck's own touch handling delivers it as a held mouse
+    /// button, so it fires while the finger is still down) or a right click.
     func onLongPress(perform action: @escaping () -> Void, onPressingChanged: @escaping (Bool) -> Void = { _ in }) -> some View {
         onLongPressGesture(minimumDuration: 0.45, perform: action, onPressingChanged: onPressingChanged)
             .overlay(RightClickCatcher(action: action))

@@ -18,6 +18,22 @@ final class FirstMouseHostingView<Content: View>: NSHostingView<Content> {
     override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
 }
 
+/// A menu item that runs a closure.
+final class MenuAction: NSMenuItem {
+    private let handler: () -> Void
+
+    init(_ title: String, checked: Bool = false, handler: @escaping () -> Void) {
+        self.handler = handler
+        super.init(title: title, action: #selector(fire), keyEquivalent: "")
+        target = self
+        state = checked ? .on : .off
+    }
+
+    required init(coder: NSCoder) { fatalError("not used") }
+
+    @objc private func fire() { handler() }
+}
+
 final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMenuDelegate {
     let model = AppModel()
     private var panel: EdgePanel!
@@ -29,6 +45,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
     private var waitingItem: NSMenuItem!
     private var previewItem: NSMenuItem!
     private var loginItem: NSMenuItem!
+    private var touchItem: NSMenuItem!
     /// The dashboard in a window on the main display, for looking and editing while the Edge
     /// isn't connected. Opened from the menu only.
     private var previewWindow: NSWindow?
@@ -79,6 +96,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
             .sink { [weak self] _ in self?.placePanel() }
             .store(in: &cancellables)
 
+        model.touch.onEdgetapFound = { [weak self] in self?.edgetapFound() }
         model.start()
 
         // Touch swipes arrive as scroll gestures (see ScrollSwipeRecognizer).
@@ -152,12 +170,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
                 menuBarCover.orderOut(nil)
             }
             edgeSize = frame.size
+            model.touch.display = (screen.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? NSNumber)?.uint32Value
             panel.orderFrontRegardless()
             model.edgeConnected = true
             previewWindow?.close()
         } else {
             // No Edge: nothing on screen until it's plugged in (or the preview is opened).
             model.guest.screenFrame = .zero
+            model.touch.display = nil
             panel.orderOut(nil)
             menuBarCover.orderOut(nil)
             model.edgeConnected = false
@@ -213,6 +233,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
         menu.addItem(NSMenuItem(title: "Send Back Guest App", action: #selector(sendBack), keyEquivalent: "u"))
         menu.addItem(NSMenuItem(title: "Accessibility Settings…", action: #selector(openAccessibility), keyEquivalent: ""))
         menu.addItem(.separator())
+        touchItem = NSMenuItem(title: "Touch", action: nil, keyEquivalent: "")
+        touchItem.submenu = NSMenu()
+        menu.addItem(touchItem)
+        menu.addItem(.separator())
         loginItem = NSMenuItem(title: "Open at Login", action: #selector(toggleOpenAtLogin), keyEquivalent: "")
         menu.addItem(loginItem)
         menu.addItem(.separator())
@@ -235,6 +259,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
     }
 
     func menuNeedsUpdate(_ menu: NSMenu) {
+        if let submenu = touchItem.submenu { fillTouchMenu(submenu) }
         // Open at Login must point at one stable copy, which scripts/build.sh installs.
         let installed = Bundle.main.bundlePath.hasPrefix("/Applications/")
         switch SMAppService.mainApp.status {
@@ -257,6 +282,73 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
         }
     }
 
+    // MARK: Touch
+
+    /// Rebuilt each time the menu opens, so it shows the current settings.
+    private func fillTouchMenu(_ menu: NSMenu) {
+        let touch = model.touch, settings = touch.settings
+        menu.removeAllItems()
+        menu.autoenablesItems = false
+        let status = MenuAction(touch.status.description) {}
+        status.isEnabled = false
+        menu.addItem(status)
+        switch touch.status {
+        case .needsInputMonitoring: menu.addItem(MenuAction("Open Input Monitoring Settings…") { Self.openPrivacy("Privacy_ListenEvent") })
+        case .needsAccessibility: menu.addItem(MenuAction("Open Accessibility Settings…") { Self.openPrivacy("Privacy_Accessibility") })
+        case .edgetapRunning: menu.addItem(MenuAction("Quit Edgetap") { Self.quitEdgetap() })
+        default: break
+        }
+        menu.addItem(.separator())
+        menu.addItem(MenuAction("Touch Support", checked: settings.enabled) { settings.enabled.toggle() })
+        menu.addItem(.separator())
+        menu.addItem(Self.choices("Scroll Speed", [("0.5×", 0.5), ("0.75×", 0.75), ("1×", 1), ("1.5×", 1.5), ("2×", 2), ("3×", 3)],
+                                  settings.scrollSpeed) { settings.scrollSpeed = $0 })
+        menu.addItem(MenuAction("Reverse Scroll Direction", checked: settings.reverseScroll) { settings.reverseScroll.toggle() })
+        menu.addItem(MenuAction("Momentum Scrolling", checked: settings.momentum) { settings.momentum.toggle() })
+        let flick = Self.choices("Flick Acceleration", [("Off", 0), ("Low", 4000), ("Normal", 2000), ("High", 1000)],
+                                 settings.flickBoost) { settings.flickBoost = $0 }
+        flick.isEnabled = settings.momentum
+        menu.addItem(flick)
+        menu.addItem(.separator())
+        menu.addItem(Self.choices("Hold Time for Right-Click (other apps)", [("0.3 s", 0.3), ("0.5 s", 0.5), ("0.8 s", 0.8), ("1.2 s", 1.2)],
+                                  settings.holdDuration) { settings.holdDuration = $0 })
+        menu.addItem(MenuAction("Hide Cursor While Touching", checked: settings.hidesCursor) { settings.hidesCursor.toggle() })
+    }
+
+    private static func choices(_ title: String, _ options: [(String, Double)], _ current: Double,
+                                apply: @escaping (Double) -> Void) -> NSMenuItem {
+        let item = NSMenuItem(title: title, action: nil, keyEquivalent: "")
+        let submenu = NSMenu()
+        submenu.autoenablesItems = false
+        for (label, value) in options { submenu.addItem(MenuAction(label, checked: abs(value - current) < 0.001) { apply(value) }) }
+        item.submenu = submenu
+        return item
+    }
+
+    private static func openPrivacy(_ pane: String) {
+        NSWorkspace.shared.open(URL(string: "x-apple.systempreferences:com.apple.preference.security?\(pane)")!)
+    }
+
+    private static func quitEdgetap() {
+        NSRunningApplication.runningApplications(withBundleIdentifier: TouchController.edgetapBundleID).forEach { $0.terminate() }
+    }
+
+    /// The old Edgetap app holds the touchscreen. Ask once; after a yes, quit it whenever it's found.
+    private func edgetapFound() {
+        let key = "touch.quitEdgetap"
+        if UserDefaults.standard.bool(forKey: key) { return Self.quitEdgetap() }
+        let alert = NSAlert()
+        alert.messageText = "EdgeDeck now handles touch"
+        alert.informativeText = "Edgetap is running and holding the Edge's touchscreen. Quit it now? EdgeDeck will also quit it whenever it finds it running.\n\nTo stop Edgetap opening at login, remove it in Login Items (opens next)."
+        alert.addButton(withTitle: "Quit Edgetap")
+        alert.addButton(withTitle: "Not Now")
+        NSApp.activate()
+        guard alert.runModal() == .alertFirstButtonReturn else { return }
+        UserDefaults.standard.set(true, forKey: key)
+        Self.quitEdgetap()
+        SMAppService.openSystemSettingsLoginItems()
+    }
+
     @objc private func toggleEditing() { model.editing.toggle() }
     @objc private func openConfig() { model.openConfigFile() }
     @objc private func reloadConfig() { model.configStore.reload() }
@@ -264,6 +356,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
     @objc private func openAccessibility() { model.openAccessibilitySettings() }
 
     func applicationWillTerminate(_ notification: Notification) {
+        model.touch.stop()
         model.guest.sendBack()
         model.nowPlaying.stop()
         model.player.close()

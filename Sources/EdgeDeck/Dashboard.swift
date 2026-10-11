@@ -69,7 +69,17 @@ struct DashboardView: View {
                 ConnectEditor().environmentObject(model.ai)
             }
 
-            if !model.accessibilityGranted { PermissionBanner().padding(.top, 20) }
+            if !model.accessibilityGranted {
+                PermissionBanner(text: "EdgeDeck needs Accessibility access for notifications, window moving and key presses. Tap to open Settings.") {
+                    model.openAccessibilitySettings()
+                }
+                .padding(.top, 20)
+            } else if model.touch.status == .needsInputMonitoring {
+                PermissionBanner(text: "Touch needs Input Monitoring: allow EdgeDeck in Settings, then touch works without moving the cursor. Tap to open.") {
+                    NSWorkspace.shared.open(URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_ListenEvent")!)
+                }
+                .padding(.top, 20)
+            }
 
             if let message = edit.message ?? model.playerMessage ?? model.configStore.lastError {
                 Text(message)
@@ -300,12 +310,12 @@ struct RailButton: View {
 }
 
 struct PermissionBanner: View {
-    @EnvironmentObject var model: AppModel
+    let text: String
+    let action: () -> Void
 
     var body: some View {
-        Button { model.openAccessibilitySettings() } label: {
-            Label("EdgeDeck needs Accessibility access for notifications, window moving and key presses. Tap to open Settings.",
-                  systemImage: "lock.shield")
+        Button(action: action) {
+            Label(text, systemImage: "lock.shield")
                 .font(.system(size: 15, weight: .semibold, design: .rounded))
                 .foregroundStyle(.white)
                 .padding(.horizontal, 20)

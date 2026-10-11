@@ -340,6 +340,8 @@ struct LauncherButton: View {
 final class SelectionState: ObservableObject {
     @Published var selected: pid_t?
     @Published var pressing: pid_t?
+    /// The tile that just reached the Long-press: it pops as the menu opens.
+    @Published var popped: pid_t?
 }
 
 /// Apps that are currently open. Tap to bring forward; long-press for
@@ -366,8 +368,10 @@ struct RunningAppsWidget: View {
             .overlay {
                 if let pid = state.selected, let item = apps.first(where: { $0.id == pid }) {
                     actionSheet(for: item)
+                        .transition(.scale(scale: 0.88).combined(with: .opacity))
                 }
             }
+            .animation(.spring(response: 0.3, dampingFraction: 0.75), value: state.selected)
         }
         // Close the action sheet if the app quit.
         .onChange(of: apps.map(\.id)) { _, ids in
@@ -438,6 +442,7 @@ private struct RunningAppTile: View {
     var body: some View {
         let onEdge = model.guest.current?.pid == item.id
         let pressed = state.pressing == item.id
+        let popped = state.popped == item.id
         VStack(spacing: 8) {
             AppIcon(image: item.icon, size: max(48, height * 0.45))
                 .overlay(alignment: .topTrailing) {
@@ -468,13 +473,19 @@ private struct RunningAppTile: View {
                     .strokeBorder(onEdge ? Color(hex: "#BF5AF2") : Color.white.opacity(0.6), lineWidth: 2)
             }
         }
-        .scaleEffect(pressed ? 0.94 : 1)
-        .brightness(pressed ? 0.12 : 0)
+        // Shrinks while held, pops when the hold is long enough (iOS-style).
+        .scaleEffect(popped ? 1.08 : pressed ? 0.94 : 1)
+        .brightness(pressed || popped ? 0.12 : 0)
         .animation(.easeOut(duration: 0.12), value: pressed)
+        .animation(.spring(response: 0.22, dampingFraction: 0.45), value: popped)
         .contentShape(RoundedRectangle(cornerRadius: 18))
         .onTapGesture { running.bringToFront(item) }
         .onLongPress {
+            state.popped = item.id
             state.selected = item.id
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) { [state] in
+                if state.popped == item.id { state.popped = nil }
+            }
         } onPressingChanged: { isPressing in
             state.pressing = isPressing ? item.id : nil
         }

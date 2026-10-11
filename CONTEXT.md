@@ -14,6 +14,10 @@ _Avoid_: Second screen, touchbar, panel
 Everything EdgeDeck shows on the Edge when no Takeover is active: the current Page plus the Page dots.
 _Avoid_: Panel, deck, home screen
 
+**Plain display**:
+The state in which the Dashboard is off and the Edge is used as a normal monitor; touch still works on whatever window is there, and a swipe in from the right edge brings the Dashboard back. Bringing something to the Edge ends it.
+_Avoid_: Hidden mode, monitor mode, dashboard off
+
 **Page dots**:
 The row of dots showing how many Pages there are and which one is current. The only Page indicator; Pages have no visible names.
 _Avoid_: Page tabs, tab strip, page bar
@@ -82,12 +86,12 @@ A quick horizontal or vertical finger movement; changes Page or scrolls a list.
 _Avoid_: Scroll, flick, drag
 
 **Long-press**:
-A touch held in place, which opens extra choices (e.g. a Running app's menu).
+A touch held in place, which opens extra choices (e.g. a Running app's menu) as soon as the hold is long enough, while the finger is still down.
 _Avoid_: Right-click, press and hold, context click
 
-**Hold-drag**:
-A touch held, then moved; used to move and resize Widgets in Edit mode.
-_Avoid_: Drag (alone), long-drag
+**Drag**:
+A touch moved while held down on something that moves with it; in Edit mode it moves and resizes Widgets straight away. In other apps' windows on the Edge the finger must rest first (about half a second), or the movement is a Swipe.
+_Avoid_: Hold-drag, long-drag
 
 ### Apps
 

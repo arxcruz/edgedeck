@@ -27,7 +27,39 @@ have to re-enable Accessibility after rebuilding. To avoid that, sign with a
 stable identity: `SIGN_IDENTITY="Your Cert Name" ./scripts/build.sh`.
 
 The menu bar icon has Edit Layout, Open config.json, Reload, Send Back Guest App,
-**Open at Login** and Quit. Open at Login works for the copy in `/Applications`.
+**Touch** settings, **Open at Login** and Quit. Open at Login works for the copy in `/Applications`.
+
+## Touch
+
+Out of the box macOS treats the Edge's touchscreen as an absolute mouse: every touch
+drags the cursor onto the Edge. EdgeDeck takes over the touchscreen instead (this used
+to be the separate Edgetap app) and decides at touch-down where each touch goes:
+
+- **On EdgeDeck itself** (the dashboard, the strip on the right, editors) touches go
+  straight to it, without moving the cursor: buttons react the moment you touch them,
+  a held finger shows as pressed and opens menus while it's still down, and in edit
+  mode a drag moves a widget at once.
+- **On any other window on the Edge** (a Guest app) touches become clicks, scrolls
+  and drags:
+
+| Touch | Result |
+| --- | --- |
+| Tap / double-tap | Click / double-click |
+| Drag a finger | Scroll (content follows the finger); a flick keeps coasting, touch to stop |
+| Rest ~0.5 s, then drag | Click-and-drag (move windows, select text) |
+| Rest ~0.5 s, then lift | Right-click |
+
+Touch needs **Input Monitoring** (System Settings → Privacy & Security → Input
+Monitoring → EdgeDeck) on top of Accessibility; a banner on the Edge says so until
+it's granted. The menu bar's **Touch** submenu turns it on or off (off hands the
+touchscreen back to macOS) and has scroll speed, reverse direction, momentum, flick
+acceleration, the hold time and hiding the cursor. If the old Edgetap app is
+running, EdgeDeck offers to quit it, since only one app can hold the touchscreen.
+
+The touchscreen reports a single finger, so there are no two-finger gestures. The
+hardware notes and `touch-probe` (`swift run touch-probe [--seize]`, dumps the
+controller's HID reports) came from Edgetap. `scripts/test.sh` runs the gesture
+tests.
 
 EdgeDeck only uses the Xeneon Edge. While it isn't connected, the menu bar icon
 turns into a dashed rectangle, the menu says "Waiting for the Xeneon Edge…", and
@@ -43,8 +75,7 @@ there's only one). Pages have no names. The menu bar macOS draws on the Edge is
 always covered by a blank strip. Lists inside
 widgets (notifications, launcher pages) use **vertical** swipes.
 
-Swipes work both as mouse drags and as scroll gestures. Touch drivers such as
-Edgetap, and trackpads, send a finger swipe as phased scroll events, which
+Swipes work both as drags (touch, mouse) and as scroll gestures (trackpads), which
 EdgeDeck turns into page changes (the page follows the finger; momentum after
 lifting is ignored, so one flick moves one page).
 
