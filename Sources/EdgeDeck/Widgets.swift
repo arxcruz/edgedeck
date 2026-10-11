@@ -294,7 +294,7 @@ struct LauncherButton: View {
         let appTarget = [.openApp, .bringToEdge].contains(button.action.type) && !button.action.value.isEmpty ? button.action.value : nil
         let missing = appTarget.map { AppLocator.url(for: $0) == nil } ?? false
         let failed = model.failedButtons.contains(button.id)
-        Button { model.run(button) } label: {
+        SwipeAwareButton { model.run(button) } label: {
             VStack(spacing: 8) {
                 icon(tint: tint)
                 if !button.title.isEmpty {

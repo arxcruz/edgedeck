@@ -173,6 +173,33 @@ struct TouchButton: View {
 }
 
 /// Visible press feedback, important on a touchscreen without hover.
+/// A Button on something you swipe (Pages, lists). A Button fires when the finger lifts inside
+/// it, and during a swipe the content (so the Button) moves along with the finger: lifting
+/// after a swipe would press it. This one ignores a touch that moved more than a little on
+/// screen.
+struct SwipeAwareButton<Label: View>: View {
+    let action: () -> Void
+    @ViewBuilder let label: () -> Label
+    @StateObject private var touch = SwipeAwareTouch()
+
+    var body: some View {
+        Button {
+            if !touch.moved { action() }
+        } label: {
+            label()
+        }
+        // Measured on screen: in the Button's own space a swipe barely moves.
+        .simultaneousGesture(DragGesture(minimumDistance: 12, coordinateSpace: .global)
+            .onChanged { _ in touch.moved = true }
+            // After the Button has seen the lift too (it runs in the same event).
+            .onEnded { _ in DispatchQueue.main.async { touch.moved = false } })
+    }
+}
+
+final class SwipeAwareTouch: ObservableObject {
+    var moved = false
+}
+
 struct PressableStyle: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View {
         configuration.label

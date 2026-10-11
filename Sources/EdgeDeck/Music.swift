@@ -669,7 +669,7 @@ private struct MusicTile: View {
 
     var body: some View {
         let art = size.height - 44
-        Button(action: play) {
+        SwipeAwareButton(action: play) {
             VStack(alignment: .leading, spacing: 4) {
                 artwork
                     .frame(width: art, height: art)
