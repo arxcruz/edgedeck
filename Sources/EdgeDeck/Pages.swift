@@ -7,7 +7,8 @@ final class EditState: ObservableObject {
     @Published var dragging: UUID?
     @Published var mode: Mode = .move
     @Published var translation: CGSize = .zero
-    @Published var showPalette = false
+    /// EDGEDECK_SNAPSHOT_PALETTE=1 (with EDGEDECK_SNAPSHOT_EDIT=1) starts with it open, for snapshots.
+    @Published var showPalette = ProcessInfo.processInfo.environment["EDGEDECK_SNAPSHOT_PALETTE"] == "1"
     @Published var confirmDeletePage: UUID?
     @Published var message: String?
 

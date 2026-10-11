@@ -3,6 +3,8 @@
 A touch dashboard for the CORSAIR Xeneon Edge on macOS: live system stats, a
 mirror of your macOS notifications, and Stream Deck–style launcher buttons.
 
+![EdgeDeck's Main page on the Xeneon Edge](docs/screenshots/main.png)
+
 Tapping a notification clicks the real macOS banner (so Slack opens the right
 conversation) and, for apps listed in `bringToEdgeOnTap`, brings that app's window to
 the Edge as the Guest app. A strip on the right keeps **Activate** / **Send back** and your newest
@@ -26,6 +28,65 @@ tool, turn EdgeDeck's touch off in the menu bar's **Touch** submenu.
 
 I haven't tested it extensively for memory leaks or for how much CPU it uses, so keep
 an eye on it if that matters to you.
+
+## Screenshots
+
+All taken straight from the Edge (2560 × 720).
+
+### Pages
+
+**Main**: World Clock, CPU, GPU, Memory, Network, Disk, Notifications, AI Agents (a
+Claude Code Session that Needs you and an OpenCode one), Running apps and two Launchers.
+
+![Main page](docs/screenshots/main.png)
+
+**Media**: Now Playing (here a YouTube video in the browser, with Watch on Edge) and Music.
+
+![Media page with Now Playing and Music](docs/screenshots/media.png)
+
+**World**: a World Clock with four Cities, day or night for each.
+
+![World Clock page](docs/screenshots/world-clock.png)
+
+**Today**: two Weather Widgets (hourly strip and 7-day list) and Calendar.
+
+![Today page with Weather and Calendar](docs/screenshots/today.png)
+
+### Edit mode
+
+Move, resize and remove Widgets, and add, reorder or delete Pages.
+
+![Edit mode](docs/screenshots/edit-mode.png)
+
+**Add Widget** lists every Widget kind.
+
+![Add Widget palette](docs/screenshots/add-widget.png)
+
+### Editors
+
+Tap a Widget in Edit mode to configure it.
+
+**Launcher editor**: the Buttons (drag to reorder, tap to edit), then apps, Running apps,
+Controls and Shortcuts to add.
+
+![Launcher editor, Controls tab](docs/screenshots/launcher-controls.png)
+![Launcher editor, Shortcuts tab](docs/screenshots/launcher-shortcuts.png)
+![Launcher editor, Running tab](docs/screenshots/launcher-running.png)
+
+**Button**: its Action (App, URL, Shortcut, Keys, Shell, AppleScript, Plain Display),
+title, colour and icon, with **Try** to test it.
+
+![Button editor](docs/screenshots/button-editor.png)
+
+**World Clock Cities** and **Weather City**, by region, with Local for wherever the Mac is.
+
+![World Clock Cities editor](docs/screenshots/world-clock-cities.png)
+![Weather City editor](docs/screenshots/weather-city.png)
+
+**Connect agents** (the AI Agents editor): Connect Claude Code Profiles and OpenCode,
+Toast when a Session needs you, Show cost.
+
+![Connect agents editor](docs/screenshots/connect-agents.png)
 
 ## Build & run
 
