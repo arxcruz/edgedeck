@@ -40,7 +40,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
     /// Remote view: the Source's Dashboard, over this Mac's own on the Edge.
     private var remotePanel: EdgePanel!
     /// While a Host watches this Mac (the Source) and there's no Edge here: the size to draw the
-    /// Dashboard at, hidden behind the wallpaper.
+    /// Dashboard at, hidden under the wallpaper.
     private var remoteWatchSize: CGSize?
     private var remoteItem: NSMenuItem!
     private var menuBarCover: EdgePanel!
@@ -251,9 +251,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
             remotePanel.orderOut(nil)
             model.edgeConnected = false
             if let size = remoteWatchSize, let screen = NSScreen.main {
-                // A Host is watching: draw the Dashboard behind the wallpaper, where it can be
-                // captured but not seen.
-                panel.level = NSWindow.Level(rawValue: Int(CGWindowLevelForKey(.desktopWindow)) - 1)
+                // A Host is watching: draw the Dashboard at the lowest window level, under the
+                // wallpaper, where it can be captured but not seen. (Just below the desktop level
+                // is still above the wallpaper on macOS 27.)
+                panel.level = NSWindow.Level(rawValue: Int(CGWindowLevelForKey(.minimumWindow)))
                 panel.setFrame(NSRect(origin: screen.frame.origin, size: size), display: true)
                 panel.orderFrontRegardless()
             }

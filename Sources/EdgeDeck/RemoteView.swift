@@ -9,7 +9,7 @@ import SwiftUI
 import VideoToolbox
 
 // Remote view: the Edge shows another Mac's Dashboard. The Host (the Mac the Edge is plugged
-// into) connects to the Source, which draws its Dashboard in its usual panel (hidden behind the
+// into) connects to the Source, which draws its Dashboard in its usual panel (hidden under the
 // wallpaper when it has no Edge) and streams it as HEVC video; the Host sends touches back as
 // mouse events for that panel. Pixels, not Widget data: see docs/adr/0001. The connection
 // (framing, Pairing, encryption) is in RemoteChannel.swift.
