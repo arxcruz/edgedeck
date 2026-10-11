@@ -24,7 +24,7 @@ EdgeDeck asks macOS for these in System Settings → Privacy & Security:
 | Permission | Needed for | When |
 | --- | --- | --- |
 | **Accessibility** (called **Device Control and Data Access** on macOS 27) | Reading notifications, moving windows, key presses, and touch | Always |
-| **Input Monitoring** | Touch: EdgeDeck reads the touchscreen itself | Always (unless you turn Touch off) |
+| **Input Monitoring** | Typing in Editors on the Edge, and touch on macOS 26 and earlier | Always |
 | **Calendar** | The Calendar Widget | If you use it |
 | **Automation** (Music, and any app your AppleScript Buttons control) | The Music Widget and AppleScript Buttons | If you use them |
 | **Local Network** | [Remote view](#another-macs-dashboard-remote-view) between your Macs | If you use it |
@@ -32,11 +32,14 @@ EdgeDeck asks macOS for these in System Settings → Privacy & Security:
 
 Things that trip people up:
 
-- **Touch only works after both Accessibility and Input Monitoring are on**, and macOS
-  applies Input Monitoring only after EdgeDeck restarts: quit it from the menu bar and
-  open it again. Until then, macOS treats the touchscreen as a mouse, so taps on the Edge
-  (even on EdgeDeck's own permission banner) may not do anything. Use the mouse on the
-  menu bar icon or System Settings instead.
+- **Touch needs Accessibility** (and, on macOS 26 and earlier, Input Monitoring; macOS
+  applies that only after EdgeDeck restarts, so quit it from the menu bar and open it
+  again). Until then, macOS treats the touchscreen as a mouse, so taps on the Edge (even
+  on EdgeDeck's own permission banner) may not do anything. Use the mouse on the menu bar
+  icon or System Settings instead.
+- **On macOS 27, macOS doesn't ask for Input Monitoring**, but typing in Editors on the
+  Edge still needs it: add EdgeDeck yourself in Privacy & Security → Input Monitoring
+  with **+**.
 - **A switch can look on and still not work.** macOS ties permissions to the app's
   signature, and every release (or rebuild) has a new one. If EdgeDeck still asks after
   an update, select it in the list, remove it with **–**, then add
