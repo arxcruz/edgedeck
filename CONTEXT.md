@@ -196,9 +196,28 @@ _Avoid_: Waiting, blocked, pending permission
 Installing EdgeDeck's bridge into one Profile so it reports events and rate limits. Its reverse is **Disconnect**.
 _Avoid_: Setup, install, link
 
+### Two Macs
+
+**Host**:
+The Mac the Edge is physically plugged into. It receives touch and draws whatever is on the Edge.
+_Avoid_: Server, client, local Mac, Edge Mac
+
+**Source**:
+The Mac whose Dashboard is on the Edge. Normally the Host itself; after switching, the other Mac. Either Mac can be Host or Source.
+_Avoid_: Remote, server, sender
+
+**Remote view**:
+The state in which the Edge shows another Mac's Dashboard (the Source is not the Host). Only the Dashboard comes across: no Takeovers start from a Remote view, and Actions happen on the Source. A Takeover on the Host, or Plain display, ends it.
+_Avoid_: AirPlay, mirroring, streaming mode, remote mode
+
+**Pair**:
+Introducing two Macs to each other once, with a code shown on the Edge, so they can later switch Sources securely.
+_Avoid_: Link, trust, connect (Connect is for Profiles)
+
 ## Relationships
 
 - The **Dashboard** has **Page dots** and one or more **Pages**; each **Page** has zero or more **Widgets**, each with exactly one **Widget kind** and one **Frame**.
 - A **Takeover** replaces the **Dashboard** on the **Edge** and owns the **Rail**; it is either a **Guest app** or an **Edge player**.
 - A **Launcher** has many **Buttons**; each **Button** has one **Action**.
 - An **Agent tool** has one or more **Profiles**; a **Profile** has zero or more **Sessions**.
+- The **Edge** has one **Host** and shows one **Source** at a time; when they differ, it is a **Remote view**. Only **Paired** Macs can be a **Source** for each other.
