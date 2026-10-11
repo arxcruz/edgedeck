@@ -385,6 +385,8 @@ struct AISettings: Codable, Hashable {
     var opencodeDatabase: String?
     /// A Session that Needs you raises a Toast (or a Rail button during a Takeover).
     var toastOnNeedsYou = true
+    /// Each Session row shows its cost so far (Claude: an API-price estimate).
+    var showCost = false
 
     init() {}
 
@@ -395,6 +397,7 @@ struct AISettings: Codable, Hashable {
         hiddenClaudeDirs = try c.decodeIfPresent([String].self, forKey: .hiddenClaudeDirs) ?? d.hiddenClaudeDirs
         opencodeDatabase = try c.decodeIfPresent(String.self, forKey: .opencodeDatabase)
         toastOnNeedsYou = try c.decodeIfPresent(Bool.self, forKey: .toastOnNeedsYou) ?? d.toastOnNeedsYou
+        showCost = try c.decodeIfPresent(Bool.self, forKey: .showCost) ?? d.showCost
     }
 }
 

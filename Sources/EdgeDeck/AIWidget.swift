@@ -69,7 +69,7 @@ struct AIWidget: View {
                 HStack(spacing: 10) {
                     OpenCodeIcon(size: 22)
                     Text("OpenCode").font(.system(size: 14, weight: .bold, design: .rounded)).frame(width: 74, alignment: .leading)
-                    Text("Today  \(Self.tokens(oc.tokens)) tokens · \(oc.messages) replies" + (oc.cost > 0 ? String(format: " · $%.2f", oc.cost) : ""))
+                    Text("Today  \(Self.tokens(oc.tokens)) tokens · \(oc.messages) replies" + (model.config.ai.showCost ? String(format: " · $%.2f", oc.cost) : ""))
                         .font(.system(size: 13, weight: .medium, design: .rounded))
                         .foregroundStyle(Theme.secondaryText)
                         .lineLimit(1)
@@ -147,6 +147,7 @@ private struct LimitBar: View {
 }
 
 private struct AgentRow: View {
+    @EnvironmentObject var model: AppModel
     @EnvironmentObject var ai: AIModel
     let session: AgentSession
     let height: CGFloat
@@ -213,8 +214,13 @@ private struct AgentRow: View {
     private var subtitle: String {
         var parts: [String] = []
         if let title = session.title, !title.isEmpty { parts.append(title) }
+        if let agent = session.agent, !agent.isEmpty { parts.append(agent) }
         if case .needsYou(let tool?) = session.state { parts.append("approve \(tool)") }
         if let context = session.contextPercent { parts.append("context \(Int(context.rounded()))%") }
+        if model.config.ai.showCost, let cost = session.cost {
+            // Claude on a plan isn't billed per token: its cost is an estimate at API prices.
+            parts.append((session.tool == .claude ? "≈" : "") + String(format: "$%.2f", cost))
+        }
         if parts.isEmpty { parts.append(session.tool == .claude ? "Claude Code" : "OpenCode") }
         return parts.joined(separator: " · ")
     }
@@ -248,8 +254,8 @@ private struct OpenCodeIcon: View {
 
 // MARK: Connect editor
 
-/// Full-screen: every Claude profile found, what's installed in it, and connect /
-/// disconnect buttons.
+/// Full-screen: every Claude profile found and OpenCode, what's installed in each, and
+/// connect / disconnect buttons.
 struct ConnectEditor: View {
     @EnvironmentObject var model: AppModel
     @EnvironmentObject var ai: AIModel
@@ -258,8 +264,8 @@ struct ConnectEditor: View {
         VStack(alignment: .leading, spacing: 14) {
             HStack(spacing: 12) {
                 Image(systemName: WidgetKind.ai.symbol).foregroundStyle(Theme.accent(for: .ai))
-                Text("Connect Claude Code").font(.system(size: 20, weight: .bold, design: .rounded))
-                Text("Adds EdgeDeck's statusline + hooks to each profile's settings.json (backed up first). Your statusline keeps working; nothing leaves this Mac.")
+                Text("Connect agents").font(.system(size: 20, weight: .bold, design: .rounded))
+                Text("Claude Code: adds EdgeDeck's statusline + hooks to each profile's settings.json (backed up first). OpenCode: adds a small plugin. Nothing leaves this Mac.")
                     .font(.system(size: 13, weight: .medium, design: .rounded))
                     .foregroundStyle(Theme.secondaryText)
                     .lineLimit(2)
@@ -303,6 +309,7 @@ struct ConnectEditor: View {
                 ForEach(ai.profiles) { profile in
                     ProfileCard(profile: profile, status: ai.connectionStatus[profile.key])
                 }
+                if let status = ai.openCodeStatus { OpenCodeCard(status: status) }
             }
 
             if !ai.hiddenProfiles.isEmpty {
@@ -326,6 +333,7 @@ struct ConnectEditor: View {
             }
 
             toastSetting
+            costSetting
 
             if let message = ai.connectionMessage {
                 Text(message)
@@ -342,20 +350,35 @@ struct ConnectEditor: View {
         .onAppear { ai.refreshProfiles() }
     }
 
-    /// App-wide, not per Widget: it's about Sessions, so two AI Widgets can't disagree.
+    // Settings here are app-wide, not per Widget: they're about Sessions, so two AI Widgets can't disagree.
+
     private var toastSetting: some View {
-        let on = model.config.ai.toastOnNeedsYou
-        return Button {
-            model.configStore.update { $0.ai.toastOnNeedsYou.toggle() }
+        setting(on: model.config.ai.toastOnNeedsYou, symbol: AgentState.needsYou(nil).symbol, color: AgentState.needsYou(nil).color,
+                title: "Toast when a Session needs you", detail: "Claude Code profiles and OpenCode must be connected for this.") {
+            $0.ai.toastOnNeedsYou.toggle()
+        }
+    }
+
+    private var costSetting: some View {
+        setting(on: model.config.ai.showCost, symbol: "dollarsign.circle.fill", color: "#30D158",
+                title: "Show cost", detail: "Each Session's cost so far. Claude's (≈) is an estimate at API prices; connected profiles only.") {
+            $0.ai.showCost.toggle()
+        }
+    }
+
+    private func setting(on: Bool, symbol: String, color: String, title: String, detail: String,
+                         toggle: @escaping (inout AppConfig) -> Void) -> some View {
+        Button {
+            model.configStore.update(toggle)
         } label: {
             HStack(spacing: 14) {
-                Image(systemName: AgentState.needsYou(nil).symbol)
+                Image(systemName: symbol)
                     .font(.system(size: 22, weight: .bold))
-                    .foregroundStyle(Color(hex: AgentState.needsYou(nil).color))
+                    .foregroundStyle(Color(hex: color))
                     .frame(width: 40)
                 VStack(alignment: .leading, spacing: 4) {
-                    Text("Toast when a Session needs you").font(.system(size: 17, weight: .bold, design: .rounded))
-                    Text("Claude Code profiles must be connected for this.")
+                    Text(title).font(.system(size: 17, weight: .bold, design: .rounded))
+                    Text(detail)
                         .font(.system(size: 12, weight: .medium, design: .rounded))
                         .foregroundStyle(Theme.secondaryText)
                 }
@@ -407,6 +430,48 @@ private struct ProfileCard: View {
             } else {
                 Button { ai.connect(profile) } label: {
                     pill(status?.statusline == true || status?.hooks == true ? "Reconnect" : "Connect", fill: Theme.accent(for: .ai), text: .black)
+                }
+                .buttonStyle(PressableStyle())
+            }
+        }
+        .padding(14)
+        .background(Theme.tileRaised, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).strokeBorder(connected ? Color(hex: "#30D158").opacity(0.6) : .clear, lineWidth: 1.5))
+    }
+
+    private func pill(_ title: String, fill: Color, text: Color) -> some View {
+        Text(title)
+            .font(.system(size: 15, weight: .bold, design: .rounded))
+            .foregroundStyle(text)
+            .padding(.horizontal, 18)
+            .frame(height: 44)
+            .background(fill, in: Capsule())
+            .contentShape(Capsule())
+    }
+}
+
+private struct OpenCodeCard: View {
+    @EnvironmentObject var ai: AIModel
+    let status: OpenCodeConnection.Status
+
+    var body: some View {
+        let connected = status == .connected
+        HStack(spacing: 14) {
+            OpenCodeIcon(size: 40)
+            VStack(alignment: .leading, spacing: 4) {
+                Text("OpenCode").font(.system(size: 17, weight: .bold, design: .rounded))
+                Text(OpenCodeConnection.pluginURL.path.replacingOccurrences(of: NSHomeDirectory(), with: "~"))
+                    .font(.system(size: 12, weight: .medium, design: .monospaced))
+                    .foregroundStyle(Theme.secondaryText)
+                Check(label: status == .outdated ? "Plugin (outdated)" : "Plugin", on: connected)
+            }
+            Spacer(minLength: 8)
+            if connected {
+                Button { ai.disconnectOpenCode() } label: { pill("Disconnect", fill: Theme.tile, text: .white) }
+                    .buttonStyle(PressableStyle())
+            } else {
+                Button { ai.connectOpenCode() } label: {
+                    pill(status == .outdated ? "Reconnect" : "Connect", fill: Theme.accent(for: .ai), text: .black)
                 }
                 .buttonStyle(PressableStyle())
             }

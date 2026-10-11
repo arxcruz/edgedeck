@@ -180,6 +180,10 @@ _Avoid_: Account, config dir
 One running conversation of an Agent tool within a Profile, which is always Busy, Idle or Needs you. It exists only while its process is alive; there is no "ended" state.
 _Avoid_: Agent, process, chat
 
+**OpenCode agent**:
+The OpenCode agent a Session is currently using (e.g. build, plan, or a custom one). A detail of the Session that can change mid-Session; never a Profile.
+_Avoid_: Profile, mode
+
 **Busy**:
 A Session working on its own (thinking, running a tool, compacting).
 _Avoid_: Working, running (as the state name)
@@ -193,7 +197,7 @@ A Session blocked until the user answers it (e.g. approves a tool). The only Ses
 _Avoid_: Waiting, blocked, pending permission
 
 **Connect**:
-Installing EdgeDeck's bridge into one Profile so it reports events and rate limits. Its reverse is **Disconnect**.
+Installing EdgeDeck's bridge into one Profile so it reports events (and, for Claude Code, rate limits). Without it EdgeDeck still sees Sessions, but cannot tell when one Needs you. Its reverse is **Disconnect**.
 _Avoid_: Setup, install, link
 
 ### Two Macs

@@ -269,15 +269,19 @@ the widget unless you tap **Open Music**.
 
 `ai` shows your local AI coding agents live: every running **Claude Code** session
 (in all profiles — `~/.claude` and any `~/.claude-*`, e.g. `.claude-work` /
-`.claude-personal` used via `CLAUDE_CONFIG_DIR` aliases) and recent **OpenCode**
-sessions, each with its project, profile and state — Thinking, the tool it's
-running (Bash, Edit…), **Needs you** (waiting for a permission; outlined in
-orange), Compacting, Error or Idle — and for how long. Tap a row to bring its
+`.claude-personal` used via `CLAUDE_CONFIG_DIR` aliases) and every **OpenCode**
+session open in a terminal, each with its project, Claude profile or OpenCode
+agent (build, plan…) and state — Thinking, the tool it's running (Bash, Edit…),
+**Needs you** (waiting for a permission or an answer; outlined in orange),
+Compacting, Error or Idle — and for how long. Tap a row to bring its
 terminal forward. On top: each Claude profile's **5-hour and weekly plan limits**,
-and OpenCode's tokens/replies today. Everything is read from files on this Mac.
+and OpenCode's tokens/replies today. **Show cost** (in the widget's editor, off by
+default) adds each session's cost so far to its row — for Claude Code an estimate at
+API prices (≈, connected profiles only), for OpenCode what it records — and today's
+cost to OpenCode's row. Everything is read from files on this Mac.
 
-Out of the box you get busy/idle (Claude Code's own session files) and full
-OpenCode state (its local database). For plan usage and tool-level detail, tap
+Out of the box you get busy/idle (Claude Code's own session files) and OpenCode's
+state from its local database. For plan usage and tool-level detail, tap
 **Connect** on the widget (or tap the widget in edit mode) and **Connect** each
 profile: EdgeDeck backs up its `settings.json`
 (`settings.json.edgedeck-<time>.bak`), then adds hooks and wraps the statusline
@@ -285,6 +289,12 @@ through a small script (`~/Library/Application Support/EdgeDeck/bin/claude-bridg
 that saves what Claude Code sends and runs your own statusline unchanged.
 Running sessions pick up the hooks after a restart. **Disconnect** removes
 exactly what was added and restores your statusline command.
+**Connect** on the OpenCode card (OpenCode 2.x) adds one plugin,
+`~/.config/opencode/plugins/edgedeck.ts`, which tells EdgeDeck when a session asks
+for a permission or asks you a question; restart OpenCode to load it.
+**Disconnect** deletes the file. OpenCode sessions are matched to the `opencode`
+running in their folder, so with several open in one folder, **Go to session** may
+pick the wrong tab unless they run `--standalone` with the plugin installed.
 (`"ai": { "opencodeDatabase": "…" }` overrides OpenCode's database path.)
 
 When a session **Needs you**, a Toast drops in on the Edge (whatever Page you're

@@ -2,7 +2,8 @@ import AppKit
 import SQLite3
 
 // Live state of local AI coding agents — Claude Code (every profile / CLAUDE_CONFIG_DIR)
-// and OpenCode — read from files they keep on disk. Nothing leaves the Mac.
+// and OpenCode — read from files they keep on disk, plus what EdgeDeck's own bridges
+// (Connect) write there. Nothing leaves the Mac.
 
 enum AgentState: Equatable {
     case idle
@@ -54,7 +55,7 @@ struct AgentSession: Identifiable, Equatable {
 
     let id: String
     let tool: Tool
-    /// Claude profile ("work", "personal") or OpenCode agent/model.
+    /// Claude profile ("work", "personal"); OpenCode has just the one, so nil.
     let profile: String?
     let project: String
     let title: String?
@@ -64,6 +65,10 @@ struct AgentSession: Identifiable, Equatable {
     let pid: pid_t?
     /// Context window use, 0…100, when known.
     let contextPercent: Double?
+    /// OpenCode agent the Session is using (build, plan, …); can change mid-Session.
+    var agent: String? = nil
+    /// Cost so far in USD, when known. Claude's is an API-price estimate (Connected Profiles only).
+    var cost: Double? = nil
 }
 
 struct ClaudeUsage: Equatable {
@@ -358,6 +363,88 @@ enum ClaudeConnection {
     }
 }
 
+/// Installs / checks / removes EdgeDeck's plugin in OpenCode's global plugins folder. The plugin
+/// appends the events that say a Session needs you (a permission ask or a question) to a file
+/// the widget watches. OpenCode has one implicit Profile, so there's one plugin.
+enum OpenCodeConnection {
+    static let pluginURL = FileManager.default.homeDirectoryForCurrentUser
+        .appendingPathComponent(".config/opencode/plugins/edgedeck.ts")
+    static let eventsURL = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+        .appendingPathComponent("EdgeDeck/opencode/events.jsonl")
+
+    /// OpenCode 2.x plugin: a default export with an id and a setup function.
+    static let plugin = #"""
+    // EdgeDeck bridge for OpenCode — installed by EdgeDeck (AI Agents widget); Disconnect removes it.
+    // Appends the events that tell a Session needs you (a permission ask or a question) to
+    // ~/Library/Application Support/EdgeDeck/opencode/events.jsonl. Nothing leaves this Mac.
+    import { appendFileSync, mkdirSync } from "node:fs";
+    import { homedir } from "node:os";
+    import { join } from "node:path";
+
+    const dir = join(homedir(), "Library/Application Support/EdgeDeck/opencode");
+    const file = join(dir, "events.jsonl");
+    const wanted = new Set([
+      "permission.asked", "permission.replied", "form.created", "form.replied", "form.cancelled",
+      "session.execution.started", "session.execution.succeeded", "session.execution.failed", "session.execution.interrupted",
+    ]);
+
+    export default {
+      id: "edgedeck",
+      setup: async (api: any) => {
+        (async () => {
+          try {
+            mkdirSync(dir, { recursive: true });
+            for await (const event of api.event.subscribe()) {
+              if (!wanted.has(event?.type)) continue;
+              const data = event.data ?? {};
+              const form = data.form ?? {};
+              const line = {
+                ts: Date.now() / 1000, pid: process.pid, type: event.type,
+                session: data.sessionID ?? form.sessionID, id: data.id ?? data.requestID ?? form.id, action: data.action,
+              };
+              try { appendFileSync(file, JSON.stringify(line) + "\n"); } catch {}
+            }
+          } catch {}
+        })();
+      },
+    };
+
+    """#
+
+    enum Status: Equatable {
+        case notInstalled
+        /// Ours, but from an older EdgeDeck.
+        case outdated
+        case connected
+    }
+
+    /// OpenCode has been used on this Mac (its config folder or database exists).
+    static func isInstalled(database: String) -> Bool {
+        let fm = FileManager.default
+        return fm.fileExists(atPath: database) || fm.fileExists(atPath: pluginURL.deletingLastPathComponent().deletingLastPathComponent().path)
+    }
+
+    static func status() -> Status {
+        guard let current = try? String(contentsOf: pluginURL, encoding: .utf8) else { return .notInstalled }
+        return current == plugin ? .connected : .outdated
+    }
+
+    @discardableResult
+    static func connect() throws -> String {
+        guard status() != .connected else { return "Already connected" }
+        try FileManager.default.createDirectory(at: pluginURL.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try plugin.write(to: pluginURL, atomically: true, encoding: .utf8)
+        return "Connected — restart OpenCode to load the plugin"
+    }
+
+    @discardableResult
+    static func disconnect() throws -> String {
+        guard status() != .notInstalled else { return "Nothing to remove" }
+        try FileManager.default.removeItem(at: pluginURL)
+        return "Disconnected OpenCode"
+    }
+}
+
 // MARK: Model
 
 final class AIModel: ObservableObject {
@@ -368,6 +455,8 @@ final class AIModel: ObservableObject {
     /// Profiles the user hid; listed in the Editor so they can be shown again.
     @Published private(set) var hiddenProfiles: [ClaudeProfile] = []
     @Published private(set) var connectionStatus: [String: ClaudeConnection.Status] = [:]
+    /// Nil while OpenCode isn't installed.
+    @Published private(set) var openCodeStatus: OpenCodeConnection.Status?
     @Published var connectionMessage: String?
     /// The full-screen Connect Claude Code view is showing.
     @Published var connectEditorOpen = false
@@ -394,6 +483,19 @@ final class AIModel: ObservableObject {
     /// When each session entered its current state (for "for 3 min").
     private var stateSince: [String: (AgentState, Date)] = [:]
     private var contextBySession: [String: Double] = [:]
+    private var costBySession: [String: Double] = [:]
+    /// From the OpenCode plugin: open permission asks and questions per OpenCode session id.
+    private var openCodeAsks: [String: [String: OpenCodeAsk]] = [:]
+    /// From the OpenCode plugin: the server process each OpenCode session last ran in.
+    private var openCodeServers: [String: pid_t] = [:]
+    private var openCodeOffset: UInt64?
+
+    struct OpenCodeAsk {
+        /// The permission's action ("shell", "edit"…); nil for a question.
+        let action: String?
+        let time: Date
+        let pid: pid_t
+    }
 
     struct HookEvent {
         let name: String
@@ -454,6 +556,7 @@ final class AIModel: ObservableObject {
     func refreshProfiles() {
         (profiles, hiddenProfiles) = ClaudeProfile.discover(extra: settings.claudeDirs ?? [], hidden: settings.hiddenClaudeDirs)
         connectionStatus = Dictionary(uniqueKeysWithValues: (profiles + hiddenProfiles).map { ($0.key, ClaudeConnection.status($0)) })
+        openCodeStatus = OpenCodeConnection.isInstalled(database: openCodeDatabase) ? OpenCodeConnection.status() : nil
         if fileWatch != nil { watchFiles() }
     }
 
@@ -465,10 +568,12 @@ final class AIModel: ObservableObject {
             FSEventStreamInvalidate(stream)
             FSEventStreamRelease(stream)
         }
-        try? FileManager.default.createDirectory(at: ClaudeConnection.dataRoot, withIntermediateDirectories: true)
-        let opencode = (settings.opencodeDatabase.map { ($0 as NSString).expandingTildeInPath }
-            ?? FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".local/share/opencode/opencode.db").path) as NSString
-        let paths = ([ClaudeConnection.dataRoot.path, opencode.deletingLastPathComponent] + profiles.map(\.sessionsDirectory.path))
+        let openCodeEvents = OpenCodeConnection.eventsURL.deletingLastPathComponent()
+        for dir in [ClaudeConnection.dataRoot, openCodeEvents] {
+            try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        }
+        let paths = ([ClaudeConnection.dataRoot.path, openCodeEvents.path, (openCodeDatabase as NSString).deletingLastPathComponent]
+                     + profiles.map(\.sessionsDirectory.path))
             .filter { FileManager.default.fileExists(atPath: $0) }
         var context = FSEventStreamContext(version: 0, info: Unmanaged.passUnretained(self).toOpaque(), retain: nil, release: nil, copyDescription: nil)
         let callback: FSEventStreamCallback = { _, info, _, _, _, _ in
@@ -492,6 +597,21 @@ final class AIModel: ObservableObject {
     func disconnect(_ profile: ClaudeProfile) {
         do { connectionMessage = try ClaudeConnection.disconnect(profile) } catch { connectionMessage = "Couldn't remove \(profile.name): \(error.localizedDescription)" }
         refreshProfiles()
+    }
+
+    func connectOpenCode() {
+        do { connectionMessage = try OpenCodeConnection.connect() } catch { connectionMessage = "Couldn't connect OpenCode: \(error.localizedDescription)" }
+        refreshProfiles()
+    }
+
+    func disconnectOpenCode() {
+        do { connectionMessage = try OpenCodeConnection.disconnect() } catch { connectionMessage = "Couldn't remove OpenCode's plugin: \(error.localizedDescription)" }
+        refreshProfiles()
+    }
+
+    private var openCodeDatabase: String {
+        settings.opencodeDatabase.map { ($0 as NSString).expandingTildeInPath }
+            ?? FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".local/share/opencode/opencode.db").path
     }
 
     var needsConnect: Bool { profiles.contains { !(connectionStatus[$0.key]?.connected ?? false) } }
@@ -572,6 +692,14 @@ final class AIModel: ObservableObject {
         return "/dev/" + String(cString: name)
     }
 
+    /// A process's current folder (same user only).
+    static func workingDirectory(of pid: pid_t) -> String? {
+        var info = proc_vnodepathinfo()
+        guard proc_pidinfo(pid, PROC_PIDVNODEPATHINFO, 0, &info, Int32(MemoryLayout<proc_vnodepathinfo>.size)) > 0 else { return nil }
+        let path = withUnsafeBytes(of: &info.pvi_cdir.vip_path) { String(cString: $0.bindMemory(to: CChar.self).baseAddress!) }
+        return path.isEmpty ? nil : path
+    }
+
     /// The app (usually a terminal) a Session's process runs under.
     func terminal(of session: AgentSession) -> NSRunningApplication? {
         guard var pid = session.pid else { return nil }
@@ -595,8 +723,7 @@ final class AIModel: ObservableObject {
             learnProfiles()
         }
         let profiles = profiles
-        let opencodePath = settings.opencodeDatabase.map { ($0 as NSString).expandingTildeInPath }
-            ?? FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".local/share/opencode/opencode.db").path
+        let opencodePath = openCodeDatabase
         queue.async { [weak self] in
             guard let self else { return }
             var sessions: [AgentSession] = []
@@ -606,12 +733,15 @@ final class AIModel: ObservableObject {
                 if let u = readStatusline(profile) { usage.append(u) }
                 sessions += readClaudeSessions(profile, label: profiles.count > 1 ? profile.name : nil)
             }
+            readOpenCodeEvents()
             let openCode = OpenCodeReader(path: opencodePath)
-            let ocSessions = openCode?.activeSessions() ?? []
+            let asks = openCodeAsks.compactMapValues { $0.values.max { $0.time < $1.time } }
+            let ocSessions = openCode?.activeSessions(servers: openCodeServers, asks: asks.mapValues(\.action)) ?? []
             let ocUsage = openCode?.todayUsage()
             sessions += ocSessions.map { s in
-                AgentSession(id: "oc:" + s.id, tool: .opencode, profile: s.agent, project: s.project, title: s.title,
-                             state: s.state, since: self.since("oc:" + s.id, s.state, fallback: s.updated), pid: s.pid, contextPercent: nil)
+                AgentSession(id: "oc:" + s.id, tool: .opencode, profile: nil, project: s.project, title: s.title,
+                             state: s.state, since: self.since("oc:" + s.id, s.state, fallback: s.updated), pid: s.pid,
+                             contextPercent: nil, agent: s.agent, cost: s.cost)
             }
             // Busy sessions first, then the most recently changed.
             sessions.sort { ($0.state.isActive ? 0 : 1, -$0.since.timeIntervalSince1970) < ($1.state.isActive ? 0 : 1, -$1.since.timeIntervalSince1970) }
@@ -667,7 +797,7 @@ final class AIModel: ObservableObject {
             let id = "cc:\(profile.key):\(sessionID)"
             return AgentSession(id: id, tool: .claude, profile: label, project: (cwd as NSString).lastPathComponent,
                                 title: name, state: state, since: since(id, state, fallback: statusAt), pid: pid,
-                                contextPercent: contextBySession[sessionID])
+                                contextPercent: contextBySession[sessionID], cost: costBySession[sessionID])
         }
     }
 
@@ -723,6 +853,47 @@ final class AIModel: ObservableObject {
         }
     }
 
+    /// Reads new lines the OpenCode plugin appended since the last poll; rotates the file when big.
+    private func readOpenCodeEvents() {
+        let url = OpenCodeConnection.eventsURL
+        guard let handle = try? FileHandle(forReadingFrom: url) else { openCodeAsks = [:]; return }
+        defer { try? handle.close() }
+        let size = (try? handle.seekToEnd()) ?? 0
+        var offset = openCodeOffset ?? (size > 256_000 ? size - 256_000 : 0)  // first read: recent tail only
+        if offset > size { offset = 0 }
+        try? handle.seek(toOffset: offset)
+        let data = handle.readDataToEndOfFile()
+        if let lastNewline = data.lastIndex(of: 0x0A) {
+            openCodeOffset = offset + UInt64(lastNewline + 1)
+            for line in data[..<lastNewline].split(separator: 0x0A) {
+                guard let json = (try? JSONSerialization.jsonObject(with: Data(line))) as? [String: Any],
+                      let type = json["type"] as? String, let session = json["session"] as? String,
+                      let pid = (json["pid"] as? NSNumber)?.int32Value else { continue }
+                let time = Date(timeIntervalSince1970: (json["ts"] as? NSNumber)?.doubleValue ?? Date().timeIntervalSince1970)
+                let id = json["id"] as? String ?? ""
+                openCodeServers[session] = pid
+                switch type {
+                case "permission.asked": openCodeAsks[session, default: [:]][id] = OpenCodeAsk(action: json["action"] as? String ?? "", time: time, pid: pid)
+                case "form.created": openCodeAsks[session, default: [:]][id] = OpenCodeAsk(action: nil, time: time, pid: pid)
+                case "permission.replied", "form.replied", "form.cancelled": openCodeAsks[session]?.removeValue(forKey: id)
+                // A finished run can't still be waiting on the user, whatever we missed.
+                case "session.execution.succeeded", "session.execution.failed", "session.execution.interrupted": openCodeAsks[session] = nil
+                default: break
+                }
+            }
+        } else {
+            openCodeOffset = offset
+        }
+        // Asks die with their OpenCode process.
+        openCodeAsks = openCodeAsks.mapValues { $0.filter { kill($0.value.pid, 0) == 0 || errno == EPERM } }.filter { !$0.value.isEmpty }
+        openCodeServers = openCodeServers.filter { kill($0.value, 0) == 0 || errno == EPERM }
+        // Keep the file small: start over once it's past 2 MB (everything in it has been read).
+        if size > 2_000_000, openCodeOffset == size {
+            try? FileManager.default.removeItem(at: url)
+            openCodeOffset = 0
+        }
+    }
+
     private func readStatusline(_ profile: ClaudeProfile) -> ClaudeUsage? {
         let url = profile.dataDirectory.appendingPathComponent("statusline.json")
         guard let data = try? Data(contentsOf: url),
@@ -730,6 +901,10 @@ final class AIModel: ObservableObject {
         if let session = json["session_id"] as? String,
            let used = ((json["context_window"] as? [String: Any])?["used_percentage"] as? NSNumber)?.doubleValue {
             contextBySession[session] = used
+        }
+        if let session = json["session_id"] as? String,
+           let cost = ((json["cost"] as? [String: Any])?["total_cost_usd"] as? NSNumber)?.doubleValue {
+            costBySession[session] = cost
         }
         let limits = json["rate_limits"] as? [String: Any] ?? [:]
         func window(_ key: String) -> (Double?, Date?) {
@@ -807,6 +982,7 @@ final class OpenCodeReader {
         let title: String?
         let project: String
         let agent: String?
+        let cost: Double
         let state: AgentState
         let updated: Date
         let pid: pid_t?
@@ -827,22 +1003,71 @@ final class OpenCodeReader {
 
     deinit { sqlite3_close(db) }
 
-    /// Top-level sessions touched in the last 12 h, while OpenCode is running.
-    func activeSessions() -> [Session] {
-        let running = AIModel.pids(named: "opencode")
-        guard !running.isEmpty else { return [] }
+    /// Sessions open in an `opencode` terminal client right now, plus any that Need you.
+    /// In OpenCode's service mode every Session runs in one shared background server, so a
+    /// Session is matched to the client running in its folder: the most recently used Sessions
+    /// there, one per client. A standalone client is its server's parent, which pins it exactly.
+    /// `servers`: OpenCode session id → server pid; `asks`: session id → what it's asking
+    /// (a permission's action, or nil for a question), both from the plugin.
+    func activeSessions(servers: [String: pid_t], asks: [String: String?]) -> [Session] {
+        let clients = Self.clients()
+        // A subagent's ask blocks its top-level Session.
+        var asking: [String: String?] = [:]
+        for (session, action) in asks { asking[root(of: session)] = action }
+        guard !clients.isEmpty || !asking.isEmpty else { return [] }
+
         let cutoff = Int64((Date().timeIntervalSince1970 - 12 * 3600) * 1000)
         let rows = query("""
-            select id, title, directory, agent, time_updated from session_v2
+            select id, title, directory, agent, time_updated,
+                   cost + (select coalesce(sum(c.cost), 0) from session_v2 c where c.parent_id = s.id)
+            from session_v2 s
             where parent_id is null and time_archived is null and time_updated > \(cutoff)
-            order by time_updated desc limit 8
+            order by time_updated desc limit 40
             """)
-        return rows.map { row in
-            let id = row[0] ?? ""
-            return Session(id: id, title: row[1], project: ((row[2] ?? "") as NSString).lastPathComponent, agent: row[3],
-                           state: state(of: id), updated: Date(timeIntervalSince1970: (Double(row[4] ?? "0") ?? 0) / 1000),
-                           pid: running.first)
+        var pidOf: [String: pid_t] = [:]
+        var free = clients
+        for row in rows {
+            guard let id = row[0], let server = servers[id] else { continue }
+            let client = AIModel.parentPID(server)
+            if free[client] != nil { pidOf[id] = client; free[client] = nil }
         }
+        for row in rows {
+            guard let id = row[0], pidOf[id] == nil, let directory = row[2] else { continue }
+            let folder = Self.canonical(directory)
+            if let client = free.first(where: { $0.value == folder })?.key { pidOf[id] = client; free[client] = nil }
+        }
+        return rows.compactMap { row in
+            guard let id = row[0], pidOf[id] != nil || asking[id] != nil else { return nil }
+            let state: AgentState = if let action = asking[id] { .needsYou(action.flatMap { $0.isEmpty ? nil : $0 }) } else { state(of: id) }
+            return Session(id: id, title: row[1], project: ((row[2] ?? "") as NSString).lastPathComponent, agent: row[3],
+                           cost: Double(row[5] ?? "0") ?? 0, state: state, updated: Date(timeIntervalSince1970: (Double(row[4] ?? "0") ?? 0) / 1000),
+                           pid: pidOf[id])
+        }
+    }
+
+    /// Running `opencode` terminal clients and the folder each runs in. Not the servers: the
+    /// shared one has no terminal, and a standalone client's own server is its child.
+    private static func clients() -> [pid_t: String] {
+        var result: [pid_t: String] = [:]
+        for pid in AIModel.pids(named: "opencode") where AIModel.tty(of: pid) != nil {
+            guard !AIModel.processName(AIModel.parentPID(pid)).lowercased().contains("opencode"),
+                  let cwd = AIModel.workingDirectory(of: pid) else { continue }
+            result[pid] = canonical(cwd)
+        }
+        return result
+    }
+
+    private static func canonical(_ path: String) -> String {
+        URL(fileURLWithPath: path).resolvingSymlinksInPath().standardizedFileURL.path
+    }
+
+    private func root(of session: String) -> String {
+        var id = session
+        for _ in 0..<8 {
+            guard let parent = query("select parent_id from session_v2 where id = ?", [id]).first?.first ?? nil else { break }
+            id = parent
+        }
+        return id
     }
 
     /// Tokens and cost of assistant messages since midnight.

@@ -566,6 +566,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
     }
 }
 
+// Debug aid: EDGEDECK_AI_DUMP=1 prints the AI Agents Sessions after a couple of polls and exits
+// (EDGEDECK_OPENCODE_DB=<path> reads another OpenCode database).
+if ProcessInfo.processInfo.environment["EDGEDECK_AI_DUMP"] == "1" {
+    let ai = AIModel()
+    ai.settings.opencodeDatabase = ProcessInfo.processInfo.environment["EDGEDECK_OPENCODE_DB"]
+    ai.start()
+    RunLoop.main.run(until: Date().addingTimeInterval(4))
+    print("opencode plugin: \(ai.openCodeStatus.map { "\($0)" } ?? "OpenCode not installed")")
+    for s in ai.sessions {
+        print([s.tool.rawValue, s.profile ?? "-", s.project, s.title ?? "-", s.agent ?? "-", s.state.label,
+               "\(s.state)", "cost \(s.cost.map { String(format: "%.2f", $0) } ?? "-")", "pid \(s.pid.map(String.init) ?? "-")", "terminal \(ai.terminal(of: s)?.localizedName ?? "-")"].joined(separator: " | "))
+    }
+    exit(0)
+}
+
 // Debug aid: EDGEDECK_CLAUDE_CONNECT=connect|disconnect|status EDGEDECK_CLAUDE_DIR=<dir> runs the
 // AI widget's Connect on one profile directory and exits (for testing on a copy).
 if let mode = ProcessInfo.processInfo.environment["EDGEDECK_CLAUDE_CONNECT"],
