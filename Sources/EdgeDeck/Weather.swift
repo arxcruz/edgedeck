@@ -1,13 +1,14 @@
 import AppKit
 import SwiftUI
 
-extension WeatherLocation {
-    /// The Local city: the city of the Mac's current time zone ("Europe/Berlin" → Berlin).
-    static var local: WeatherLocation { WeatherLocation(name: ClockMath.city(TimeZone.current.identifier)) }
+extension City {
+    /// Name given to the geocoder when there are no coordinates: the time-zone city
+    /// (Local: the Mac's), or the label of a place whose time zone isn't known yet.
+    var lookupName: String { timeZone.isEmpty ? (label ?? "") : ClockMath.city(resolvedTimeZone.identifier) }
 
-    var key: String {
+    var weatherKey: String {
         if let latitude, let longitude { return String(format: "%.3f,%.3f", latitude, longitude) }
-        return name.lowercased()
+        return lookupName.lowercased()
     }
 }
 
@@ -31,6 +32,9 @@ struct Forecast {
     }
 
     let fetched: Date
+    /// Where it was fetched for (as given or geocoded).
+    let latitude: Double
+    let longitude: Double
     let timeZone: TimeZone
     let temperature: Double
     let feelsLike: Double
@@ -53,7 +57,7 @@ final class WeatherModel: ObservableObject {
     /// Fahrenheit and mph where the system uses US units, Celsius and km/h elsewhere.
     let usUnits = Locale.current.measurementSystem == .us
 
-    private var locations: [String: WeatherLocation] = [:]
+    private var cities: [String: City] = [:]
     private var coordinates: [String: (Double, Double)] = [:]
     private var inFlight = Set<String>()
     private let refreshInterval: TimeInterval = 15 * 60
@@ -74,30 +78,30 @@ final class WeatherModel: ObservableObject {
     }
 
     /// Called by widgets when they appear; fetches if there's no recent forecast.
-    func track(_ location: WeatherLocation) {
-        locations[location.key] = location
-        refresh(location, force: false)
+    func track(_ city: City) {
+        cities[city.weatherKey] = city
+        refresh(city, force: false)
     }
 
     private func refreshStale(force: Bool = false) {
-        locations.values.forEach { refresh($0, force: force) }
+        cities.values.forEach { refresh($0, force: force) }
     }
 
-    private func refresh(_ location: WeatherLocation, force: Bool) {
-        let key = location.key
+    private func refresh(_ city: City, force: Bool) {
+        let key = city.weatherKey
         if !force, let forecast = forecasts[key], Date().timeIntervalSince(forecast.fetched) < refreshInterval { return }
         guard !inFlight.contains(key) else { return }
         inFlight.insert(key)
         Task {
             do {
-                let forecast = try await fetch(location)
+                let forecast = try await fetch(city)
                 await MainActor.run {
                     forecasts[key] = forecast
                     errors[key] = nil
                     inFlight.remove(key)
                 }
             } catch {
-                NSLog("EdgeDeck: weather for \(location.name) failed: \(error)")
+                NSLog("EdgeDeck: weather for \(city.name) failed: \(error)")
                 await MainActor.run {
                     errors[key] = error.localizedDescription
                     inFlight.remove(key)
@@ -106,8 +110,8 @@ final class WeatherModel: ObservableObject {
         }
     }
 
-    private func fetch(_ location: WeatherLocation) async throws -> Forecast {
-        let (latitude, longitude) = try await resolve(location)
+    private func fetch(_ city: City) async throws -> Forecast {
+        let (latitude, longitude) = try await resolve(city)
         var components = URLComponents(string: "https://api.open-meteo.com/v1/forecast")!
         components.queryItems = [
             .init(name: "latitude", value: String(latitude)),
@@ -137,7 +141,7 @@ final class WeatherModel: ObservableObject {
                          low: d.temperature_2m_min[i] ?? 0, precipitationChance: d.precipitation_probability_max[i] ?? 0)
         }
         let c = r.current
-        return Forecast(fetched: Date(), timeZone: TimeZone(identifier: r.timezone) ?? .current,
+        return Forecast(fetched: Date(), latitude: latitude, longitude: longitude, timeZone: TimeZone(identifier: r.timezone) ?? .current,
                         temperature: c.temperature_2m, feelsLike: c.apparent_temperature, humidity: c.relative_humidity_2m,
                         windSpeed: c.wind_speed_10m, code: c.weather_code, isDay: c.is_day == 1,
                         hours: hours, days: days,
@@ -145,15 +149,15 @@ final class WeatherModel: ObservableObject {
     }
 
     /// Coordinates from the config, or looked up by name with Open-Meteo's geocoder.
-    private func resolve(_ location: WeatherLocation) async throws -> (Double, Double) {
-        if let latitude = location.latitude, let longitude = location.longitude { return (latitude, longitude) }
-        let key = location.key
+    private func resolve(_ city: City) async throws -> (Double, Double) {
+        if let latitude = city.latitude, let longitude = city.longitude { return (latitude, longitude) }
+        let key = city.weatherKey
         if let cached = await MainActor.run(body: { coordinates[key] }) { return cached }
         var components = URLComponents(string: "https://geocoding-api.open-meteo.com/v1/search")!
-        components.queryItems = [.init(name: "name", value: location.name), .init(name: "count", value: "1")]
+        components.queryItems = [.init(name: "name", value: city.lookupName), .init(name: "count", value: "1")]
         let (data, _) = try await session.data(from: components.url!)
         guard let place = try JSONDecoder().decode(GeocodingResponse.self, from: data).results?.first else {
-            throw WeatherError.unknownPlace(location.name)
+            throw WeatherError.unknownPlace(city.name)
         }
         await MainActor.run { coordinates[key] = (place.latitude, place.longitude) }
         return (place.latitude, place.longitude)
@@ -260,7 +264,7 @@ struct WeatherWidget: View {
     @EnvironmentObject var weather: WeatherModel
     let widget: WidgetConfig
 
-    private var location: WeatherLocation { widget.location ?? .local }
+    private var city: City { widget.city ?? .local }
 
     /// Only animate while the widget can actually be seen.
     private var visible: Bool {
@@ -268,9 +272,9 @@ struct WeatherWidget: View {
     }
 
     var body: some View {
-        let location = location
-        let forecast = weather.forecasts[location.key]
-        Tile(title: widget.title ?? location.name, symbol: WidgetKind.weather.symbol, accent: Theme.accent(for: .weather),
+        let city = city
+        let forecast = weather.forecasts[city.weatherKey]
+        Tile(title: widget.title ?? city.name, symbol: WidgetKind.weather.symbol, accent: Theme.accent(for: .weather),
              background: forecast == nil ? Theme.tile : .clear) {
             if let forecast {
                 GeometryReader { geo in
@@ -293,7 +297,7 @@ struct WeatherWidget: View {
                 }
             } else {
                 VStack(spacing: 8) {
-                    if let error = weather.errors[location.key] {
+                    if let error = weather.errors[city.weatherKey] {
                         Image(systemName: "exclamationmark.triangle").font(.system(size: 30))
                         Text(error).font(.system(size: 14, weight: .medium, design: .rounded)).multilineTextAlignment(.center)
                     } else {
@@ -310,8 +314,20 @@ struct WeatherWidget: View {
                     .clipShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
             }
         }
-        .onAppear { weather.track(location) }
-        .onChange(of: location) { _, new in weather.track(new) }
+        .onAppear { weather.track(city) }
+        .onChange(of: city.weatherKey) { weather.track(city) }
+        .onChange(of: forecast?.timeZone.identifier) { _, zone in completeCity(timeZone: zone, forecast: forecast) }
+    }
+
+    /// A place migrated from an old `location` learns its time zone (and coordinates,
+    /// since its label alone no longer decides where it is) from its first forecast.
+    private func completeCity(timeZone zone: String?, forecast: Forecast?) {
+        guard let zone, let forecast, let city = widget.city, city.timeZone.isEmpty else { return }
+        model.updateWidget(widget.id) {
+            $0.city?.timeZone = zone
+            $0.city?.latitude = forecast.latitude
+            $0.city?.longitude = forecast.longitude
+        }
     }
 }
 

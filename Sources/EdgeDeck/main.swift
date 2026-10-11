@@ -77,6 +77,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             if ProcessInfo.processInfo.environment["EDGEDECK_SNAPSHOT_LAUNCHER_EDITOR"] == "1" {
                 model.launcherEditorWidgetID = model.currentPage.widgets.first { $0.kind == .launcher }?.id
             }
+            // EDGEDECK_SNAPSHOT_CITY_EDITOR=weather|worldClock opens the City editor of the page's first such widget.
+            if let kind = ProcessInfo.processInfo.environment["EDGEDECK_SNAPSHOT_CITY_EDITOR"].flatMap(WidgetKind.init(rawValue:)) {
+                model.cityEditorWidgetID = model.currentPage.widgets.first { $0.kind == kind }?.id
+            }
         }
     }
 

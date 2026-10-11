@@ -132,13 +132,20 @@ stays still with System Settings › Accessibility › Reduce motion).
 Units follow your macOS region (°C/km/h, or °F/mph for US). Tap the current
 conditions to open Apple Weather.
 
-The location defaults to Local, the city of the Mac's current time zone. Set another per widget —
-by name (looked up automatically) or by coordinates:
+Each Weather widget forecasts one city, Local (the Mac's current time zone) by
+default. In edit mode tap **✎ City** to pick Local or any city by touch, the same
+picker World Clock uses. A city is the same thing in both widgets: a time zone,
+an optional label, and optional coordinates (otherwise looked up by name). For a
+place that isn't in the time-zone list, set it in `config.json`:
 
 ```json
-{ "type": "weather", "location": { "name": "São Paulo" } }
-{ "type": "weather", "location": { "name": "Home", "latitude": 52.52, "longitude": 13.40 } }
+{ "type": "weather", "city": { "timeZone": "America/Sao_Paulo" } }
+{ "type": "weather", "city": { "timeZone": "Europe/Berlin", "label": "Home", "latitude": 52.52, "longitude": 13.40 } }
 ```
+
+The older `"location": { "name": … }` form still works: a name matching a
+time-zone city becomes that city, any other place is looked up and gets its
+time zone and coordinates from its first forecast.
 
 ## Calendar
 
@@ -262,7 +269,7 @@ exact conversation.
 
 `match` is a substring of the display name; `railWidth` is the width of the
 Rail beside a Guest app or the Edge player. Older names (`dockOnTap`,
-`dockRailWidth`, `dockApp`, `zones`) are still read. Without a match EdgeDeck uses the
+`dockRailWidth`, `dockApp`, `zones`, `location`) are still read. Without a match EdgeDeck uses the
 smallest secondary display, or shows a preview strip on the main display.
 
 ## Debugging

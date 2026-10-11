@@ -108,7 +108,7 @@ final class AppModel: ObservableObject {
 
     // MARK: Widget settings
 
-    /// World Clock widget whose City editor is open.
+    /// World Clock or Weather widget whose City editor is open.
     @Published var cityEditorWidgetID: UUID?
     @Published var launcherEditorWidgetID: UUID?
     /// A full-screen Editor is open, so horizontal swipes mustn't change pages.

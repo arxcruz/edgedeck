@@ -137,22 +137,37 @@ struct GridFrame: Codable, Hashable {
     }
 }
 
-/// A city shown on a World Clock widget.
+/// A named place with a time zone, shown by World Clock and forecast by Weather.
 struct City: Codable, Hashable, Identifiable {
     /// `timeZone` of the Local city, which follows the Mac's current time zone.
     static let localIdentifier = "local"
     static var local: City { City(timeZone: localIdentifier) }
 
     var id: UUID
-    /// IANA identifier, e.g. "America/Sao_Paulo", or `localIdentifier`.
+    /// IANA identifier, e.g. "America/Sao_Paulo", or `localIdentifier`. Empty only for a
+    /// place migrated from an old Weather `location` until its first forecast fills it in.
     var timeZone: String
     /// Optional display name; defaults to the city in the identifier.
     var label: String?
+    /// Where Weather forecasts for; looked up by name when absent.
+    var latitude: Double?
+    var longitude: Double?
 
-    init(timeZone: String, label: String? = nil) {
+    init(timeZone: String, label: String? = nil, latitude: Double? = nil, longitude: Double? = nil) {
         self.id = UUID()
         self.timeZone = timeZone
         self.label = label
+        self.latitude = latitude
+        self.longitude = longitude
+    }
+
+    /// An old Weather `location`: a name matching a time-zone city becomes that city,
+    /// anything else a labelled place whose time zone is filled in by its first forecast.
+    init(legacyName name: String, latitude: Double?, longitude: Double?) {
+        func folded(_ s: String) -> String { s.folding(options: [.caseInsensitive, .diacriticInsensitive], locale: nil) }
+        let match = TimeZone.knownTimeZoneIdentifiers.first { folded(ClockMath.city($0)) == folded(name) }
+        let label = match.map(ClockMath.city) == name ? nil : name
+        self.init(timeZone: match ?? "", label: label, latitude: latitude, longitude: longitude)
     }
 
     init(from decoder: Decoder) throws {
@@ -160,11 +175,13 @@ struct City: Codable, Hashable, Identifiable {
         id = try c.decodeIfPresent(UUID.self, forKey: .id) ?? UUID()
         timeZone = try c.decode(String.self, forKey: .timeZone)
         label = try c.decodeIfPresent(String.self, forKey: .label)
+        latitude = try c.decodeIfPresent(Double.self, forKey: .latitude)
+        longitude = try c.decodeIfPresent(Double.self, forKey: .longitude)
     }
 }
 
-/// Where a Weather widget reports for. Coordinates are looked up from `name` when absent.
-struct WeatherLocation: Codable, Hashable {
+/// How a Weather widget's place was stored before it became a City.
+private struct LegacyWeatherLocation: Decodable {
     var name: String
     var latitude: Double?
     var longitude: Double?
@@ -180,8 +197,8 @@ struct WidgetConfig: Codable, Hashable, Identifiable {
     var buttons: [ButtonConfig]?
     /// World Clock only.
     var cities: [City]?
-    /// Weather only; defaults to the Local city.
-    var location: WeatherLocation?
+    /// Weather only; nil means the Local city.
+    var city: City?
     /// Calendar only: calendar names to show (all when absent).
     var calendars: [String]?
     /// Calendar only: how many days to show, starting today.
@@ -198,8 +215,8 @@ struct WidgetConfig: Codable, Hashable, Identifiable {
         if kind == .worldClock { cities = City.defaults }
     }
 
-    /// `zones` is the old name of `cities`.
-    enum CodingKeys: String, CodingKey { case id, kind = "type", frame, title, buttons, cities, zones, location, calendars, days, width }
+    /// `zones` is the old name of `cities`; `location` the old form of `city`.
+    enum CodingKeys: String, CodingKey { case id, kind = "type", frame, title, buttons, cities, zones, city, location, calendars, days, width }
 
     init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
@@ -218,7 +235,10 @@ struct WidgetConfig: Codable, Hashable, Identifiable {
         } else {
             throw DecodingError.dataCorruptedError(forKey: .kind, in: c, debugDescription: "Unknown widget kind \(rawKind)")
         }
-        location = try c.decodeIfPresent(WeatherLocation.self, forKey: .location)
+        city = try c.decodeIfPresent(City.self, forKey: .city)
+            ?? c.decodeIfPresent(LegacyWeatherLocation.self, forKey: .location).map {
+                City(legacyName: $0.name, latitude: $0.latitude, longitude: $0.longitude)
+            }
         calendars = try c.decodeIfPresent([String].self, forKey: .calendars)
         days = try c.decodeIfPresent(Int.self, forKey: .days)
         legacyWidth = try c.decodeIfPresent(Double.self, forKey: .width)
@@ -232,7 +252,7 @@ struct WidgetConfig: Codable, Hashable, Identifiable {
         try c.encodeIfPresent(title, forKey: .title)
         try c.encodeIfPresent(buttons, forKey: .buttons)
         try c.encodeIfPresent(cities, forKey: .cities)
-        try c.encodeIfPresent(location, forKey: .location)
+        try c.encodeIfPresent(city, forKey: .city)
         try c.encodeIfPresent(calendars, forKey: .calendars)
         try c.encodeIfPresent(days, forKey: .days)
     }

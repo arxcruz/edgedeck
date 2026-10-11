@@ -273,16 +273,22 @@ struct CityEditor: View {
     private let cellSize = CGSize(width: 200, height: 64)
     private let spacing: CGFloat = 8
 
+    /// Weather forecasts exactly one City (nil = Local); World Clock shows a list.
+    private var single: Bool { model.widget(widgetID)?.kind == .weather }
+    /// Editors take their widget kind's colour.
+    private var accent: Color { Theme.accent(for: single ? .weather : .worldClock) }
+
     var body: some View {
-        let cities = model.widget(widgetID)?.cities ?? []
+        let widget = model.widget(widgetID)
+        let cities = single ? [widget?.city ?? .local] : widget?.cities ?? []
         let chosen = Set(cities.map(\.timeZone))
         let choices = state.region.identifiers
 
         VStack(alignment: .leading, spacing: 12) {
             HStack(spacing: 12) {
-                Image(systemName: "globe").foregroundStyle(Theme.accent(for: .worldClock))
-                Text("World Clock cities").font(.system(size: 20, weight: .bold, design: .rounded))
-                Text("\(cities.count) selected").foregroundStyle(Theme.secondaryText)
+                Image(systemName: single ? WidgetKind.weather.symbol : "globe").foregroundStyle(accent)
+                Text(single ? "Weather city" : "World Clock cities").font(.system(size: 20, weight: .bold, design: .rounded))
+                Text(single ? cities[0].name : "\(cities.count) selected").foregroundStyle(Theme.secondaryText)
                 Spacer()
                 Button { model.cityEditorWidgetID = nil } label: {
                     Text("Done")
@@ -294,17 +300,17 @@ struct CityEditor: View {
                 .buttonStyle(PressableStyle())
             }
 
-            selectedRow(cities)
+            if !single { selectedRow(cities) }
 
             HStack(spacing: 8) {
                 let hasLocal = cities.contains(where: \.isLocal)
                 Button { toggle(City.localIdentifier, cities: cities) } label: {
                     Label("Local · \(ClockMath.city(TimeZone.current.identifier))", systemImage: hasLocal ? "checkmark.circle.fill" : "location.fill")
                         .font(.system(size: 15, weight: .semibold, design: .rounded))
-                        .foregroundStyle(hasLocal ? Color.black : Theme.accent(for: .worldClock))
+                        .foregroundStyle(hasLocal ? Color.black : accent)
                         .padding(.horizontal, 18)
                         .frame(height: 40)
-                        .background(hasLocal ? Theme.accent(for: .worldClock) : Theme.tileRaised, in: Capsule())
+                        .background(hasLocal ? accent : Theme.tileRaised, in: Capsule())
                 }
                 .buttonStyle(PressableStyle())
                 Divider().frame(height: 28).overlay(Color.white.opacity(0.15))
@@ -337,7 +343,7 @@ struct CityEditor: View {
                     LazyVGrid(columns: Array(repeating: GridItem(.fixed(cellSize.width), spacing: spacing), count: columns),
                               alignment: .leading, spacing: spacing) {
                         ForEach(slice, id: \.self) { identifier in
-                            CityButton(identifier: identifier, selected: chosen.contains(identifier), size: cellSize) {
+                            CityButton(identifier: identifier, selected: chosen.contains(identifier), single: single, accent: accent, size: cellSize) {
                                 toggle(identifier, cities: cities)
                             }
                         }
@@ -380,7 +386,7 @@ struct CityEditor: View {
                 }
                 .padding(.horizontal, 6)
                 .frame(height: 44)
-                .background(Theme.accent(for: .worldClock).opacity(0.15), in: Capsule())
+                .background(accent.opacity(0.15), in: Capsule())
             }
         }
     }
@@ -397,7 +403,7 @@ struct CityEditor: View {
                 } label: {
                     Text(letter)
                         .font(.system(size: 12, weight: .bold, design: .rounded))
-                        .foregroundStyle(Theme.accent(for: .worldClock))
+                        .foregroundStyle(accent)
                         .frame(width: 44, height: 15)
                         .contentShape(Rectangle())
                 }
@@ -407,6 +413,11 @@ struct CityEditor: View {
     }
 
     private func toggle(_ identifier: String, cities: [City]) {
+        if single {
+            // Picking replaces the forecast's City; Local is stored as no City.
+            model.updateWidget(widgetID) { $0.city = identifier == City.localIdentifier ? nil : City(timeZone: identifier) }
+            return
+        }
         model.updateWidget(widgetID) { widget in
             var list = widget.cities ?? []
             if let index = list.firstIndex(where: { $0.timeZone == identifier }) {
@@ -435,6 +446,9 @@ struct CityEditor: View {
 private struct CityButton: View {
     let identifier: String
     let selected: Bool
+    /// One-choice editors show an empty circle (replace) instead of a plus (add).
+    let single: Bool
+    let accent: Color
     let size: CGSize
     let action: () -> Void
 
@@ -453,13 +467,13 @@ private struct CityButton: View {
                         .foregroundStyle(selected ? Color.black.opacity(0.6) : Theme.secondaryText)
                 }
                 Spacer(minLength: 0)
-                Image(systemName: selected ? "checkmark.circle.fill" : "plus.circle")
+                Image(systemName: selected ? "checkmark.circle.fill" : single ? "circle" : "plus.circle")
                     .font(.system(size: 20))
             }
             .foregroundStyle(selected ? Color.black : Color.white)
             .padding(.horizontal, 12)
             .frame(width: size.width, height: size.height)
-            .background(selected ? Theme.accent(for: .worldClock) : Theme.tileRaised, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+            .background(selected ? accent : Theme.tileRaised, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
             .contentShape(Rectangle())
         }
         .buttonStyle(PressableStyle())

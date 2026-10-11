@@ -192,6 +192,7 @@ struct WidgetEditChrome: View {
         switch widget.kind {
         case .launcher: return ("Apps", { model.launcherEditorWidgetID = id })
         case .worldClock: return ("Cities", { model.cityEditorWidgetID = id })
+        case .weather: return ("City", { model.cityEditorWidgetID = id })
         case .ai: return ("Connect", { model.ai.connectEditorOpen = true })
         default: return nil
         }
