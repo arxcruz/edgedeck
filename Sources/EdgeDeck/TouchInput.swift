@@ -19,10 +19,13 @@ final class TouchInput {
     func start() throws {
         guard !isRunning else { return }
         configure()
-        IOHIDManagerScheduleWithRunLoop(manager, CFRunLoopGetMain(), CFRunLoopMode.defaultMode.rawValue)
+        // Common modes, not just the default one: while AppKit tracks a press (e.g. a tap in a
+        // text field), the run loop is in event-tracking mode and must still hear the finger lift,
+        // or AppKit waits for that mouse-up forever and every touch after it is lost.
+        IOHIDManagerScheduleWithRunLoop(manager, CFRunLoopGetMain(), CFRunLoopMode.commonModes.rawValue)
         let rc = IOHIDManagerOpen(manager, IOOptionBits(kIOHIDOptionsTypeSeizeDevice))
         guard rc == kIOReturnSuccess else {
-            IOHIDManagerUnscheduleFromRunLoop(manager, CFRunLoopGetMain(), CFRunLoopMode.defaultMode.rawValue)
+            IOHIDManagerUnscheduleFromRunLoop(manager, CFRunLoopGetMain(), CFRunLoopMode.commonModes.rawValue)
             throw StartError.openFailed(rc)
         }
         isRunning = true
@@ -31,7 +34,7 @@ final class TouchInput {
     func stop() {
         guard isRunning else { return }
         IOHIDManagerClose(manager, IOOptionBits(kIOHIDOptionsTypeNone))
-        IOHIDManagerUnscheduleFromRunLoop(manager, CFRunLoopGetMain(), CFRunLoopMode.defaultMode.rawValue)
+        IOHIDManagerUnscheduleFromRunLoop(manager, CFRunLoopGetMain(), CFRunLoopMode.commonModes.rawValue)
         isRunning = false
     }
 
