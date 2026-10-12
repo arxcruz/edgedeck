@@ -188,6 +188,7 @@ struct WidgetEditChrome: View {
         case .launcher: return { model.launcherEditorWidgetID = id }
         case .worldClock, .weather: return { model.cityEditorWidgetID = id }
         case .ai: return { model.ai.connectEditorOpen = true }
+        case .timer, .pomodoro: return { model.timingEditorWidgetID = id }
         default: return nil
         }
     }

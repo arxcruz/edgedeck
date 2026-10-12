@@ -15,6 +15,7 @@ final class AppModel: ObservableObject {
     let calendar = CalendarModel()
     let music = MusicModel()
     let ai = AIModel()
+    let timing = TimingModel()
     let touch = TouchController()
     let swipe = SwipeState()
     let remoteHost = RemoteHost()
@@ -49,6 +50,7 @@ final class AppModel: ObservableObject {
                 editing = false
                 cityEditorWidgetID = nil
                 launcherEditorWidgetID = nil
+                timingEditorWidgetID = nil
                 ai.connectEditorOpen = false
             }
         }
@@ -63,6 +65,8 @@ final class AppModel: ObservableObject {
                 self?.notifications.settings = config.notifications
                 self?.guest.railWidth = config.display.railWidth
                 self?.ai.settings = config.ai
+                self?.timing.widgets = Dictionary(uniqueKeysWithValues: config.pages.flatMap(\.widgets)
+                    .filter { $0.kind == .timer || $0.kind == .pomodoro }.map { ($0.id, $0) })
             }
             .store(in: &cancellables)
 
@@ -141,7 +145,7 @@ final class AppModel: ObservableObject {
         }
 
         // Forward nested changes so views observing the model refresh.
-        for publisher in [configStore.objectWillChange, touch.objectWillChange, notifications.objectWillChange, guest.objectWillChange, player.objectWillChange, ai.objectWillChange, remoteHost.objectWillChange, remoteSource.objectWillChange, keyboard.objectWillChange] {
+        for publisher in [configStore.objectWillChange, touch.objectWillChange, notifications.objectWillChange, guest.objectWillChange, player.objectWillChange, ai.objectWillChange, timing.objectWillChange, remoteHost.objectWillChange, remoteSource.objectWillChange, keyboard.objectWillChange] {
             publisher.sink { [weak self] _ in self?.objectWillChange.send() }.store(in: &cancellables)
         }
 
@@ -168,6 +172,7 @@ final class AppModel: ObservableObject {
         calendar.start()
         music.start()
         ai.start()
+        timing.start()
         touch.start()
         remoteHost.start()
         remoteSource.start()
@@ -338,8 +343,19 @@ final class AppModel: ObservableObject {
     @Published var launcherEditorWidgetID: UUID? {
         didSet { if launcherEditorWidgetID == nil { endTyping() } }
     }
+    /// Timer or Pomodoro whose Editor is open.
+    @Published var timingEditorWidgetID: UUID? {
+        didSet { if timingEditorWidgetID == nil { endTyping() } }
+    }
     /// A full-screen Editor is open, so horizontal swipes mustn't change pages.
-    var editorOpen: Bool { cityEditorWidgetID != nil || launcherEditorWidgetID != nil || ai.connectEditorOpen }
+    var editorOpen: Bool { cityEditorWidgetID != nil || launcherEditorWidgetID != nil || timingEditorWidgetID != nil || ai.connectEditorOpen }
+
+    /// A Ringing row on the Toast: stops it (a Pomodoro starts its next phase) and shows its Page.
+    func acknowledgeRinging(_ id: UUID) {
+        timing.acknowledge(id)
+        guard !plainDisplay, let index = pages.firstIndex(where: { $0.widgets.contains { $0.id == id } }) else { return }
+        showPage(index)
+    }
 
     func widget(_ id: UUID) -> WidgetConfig? {
         pages.lazy.flatMap(\.widgets).first { $0.id == id }

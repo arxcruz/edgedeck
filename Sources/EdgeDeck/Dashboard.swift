@@ -73,6 +73,10 @@ struct DashboardView: View {
                 LauncherEditor(widgetID: id)
             }
 
+            if let id = model.timingEditorWidgetID, model.widget(id) != nil {
+                TimingEditor(widgetID: id)
+            }
+
             if model.ai.connectEditorOpen {
                 ConnectEditor().environmentObject(model.ai)
             }
@@ -99,18 +103,24 @@ struct DashboardView: View {
                     .padding(.bottom, model.editing ? Self.toolbarHeight + 12 : 16)
             }
 
-            // One Toast at a time; a Session that Needs you outranks a Notification.
+            // Ringing Timers and Pomodoros get their own Toast, above the one other Toast shown at a
+            // time (a Session that Needs you outranks a Notification).
             if !railVisible {
+                VStack(spacing: 12) {
+                if !model.timing.toastRinging.isEmpty {
+                    RingingToastView(widgets: model.timing.toastRinging)
+                        .transition(.move(edge: .top).combined(with: .opacity))
+                }
                 if let session = model.ai.toastSessions.first {
                     AgentToastView(session: session, more: model.ai.toastSessions.count - 1)
                         .id(session.id)
-                        .padding(.top, 24)
                         .transition(.move(edge: .top).combined(with: .opacity))
                 } else if let toast = model.notifications.toast {
                     ToastView(notification: toast)
-                        .padding(.top, 24)
                         .transition(.move(edge: .top).combined(with: .opacity))
                 }
+                }
+                .padding(.top, 24)
             }
 
             if !railVisible, let notice = model.keychainNotice {
@@ -129,6 +139,7 @@ struct DashboardView: View {
         }
         .animation(.spring(response: 0.35, dampingFraction: 0.85), value: model.notifications.toast)
         .animation(.spring(response: 0.35, dampingFraction: 0.85), value: model.ai.toastSessions)
+        .animation(.spring(response: 0.35, dampingFraction: 0.85), value: model.timing.toastRinging)
         .environmentObject(model.stats)
         .environmentObject(model.runningApps)
         .environmentObject(model.nowPlaying)
@@ -136,6 +147,7 @@ struct DashboardView: View {
         .environmentObject(model.calendar)
         .environmentObject(model.music)
         .environmentObject(model.ai)
+        .environmentObject(model.timing)
         .preferredColorScheme(.dark)
     }
 
@@ -289,7 +301,13 @@ struct PlainDisplayToast: View {
     @EnvironmentObject var model: AppModel
 
     var body: some View {
-        if let session = model.ai.toastSessions.first {
+        if model.plainDisplay, !model.timing.toastRinging.isEmpty {
+            // On a Plain display, Ringing too: the Mac's own Timers (not over a Remote view).
+            RingingToastView(widgets: model.timing.toastRinging, floating: true)
+                .padding(AgentToastView.floatingMargin)
+                .fixedSize()
+                .preferredColorScheme(.dark)
+        } else if let session = model.ai.toastSessions.first {
             AgentToastView(session: session, more: model.ai.toastSessions.count - 1, floating: true)
                 .id(session.id)
                 .padding(AgentToastView.floatingMargin)
@@ -365,6 +383,14 @@ struct Rail: View {
                 let count = model.ai.needingYou.count
                 RailButton(title: count > 1 ? "\(count) need you" : "Needs you", symbol: session.state.symbol,
                            tint: Color(hex: session.state.color)) { model.ai.focus(session) }
+            }
+            // Stands in for the Ringing Toast while the Dashboard is covered: a Tap stops the first.
+            if let widget = model.timing.ringing.first {
+                let count = model.timing.ringing.count
+                RailButton(title: count > 1 ? "\(count) ringing" : "\(widget.title ?? widget.kind.displayName) ringing",
+                           symbol: "bell.and.waves.left.and.right.fill", tint: Theme.accent(for: widget.kind)) {
+                    model.timing.acknowledge(widget.id)
+                }
             }
             Divider().overlay(Color.white.opacity(0.15))
             // Newest notifications stay reachable while the dashboard is covered.

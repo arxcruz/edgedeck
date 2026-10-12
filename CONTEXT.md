@@ -132,7 +132,7 @@ EdgeDeck's mirror of one macOS notification, as listed by the Notifications Widg
 _Avoid_: Alert, banner (for the mirror)
 
 **Toast**:
-The brief pop-up on the Edge announcing something that wants the user: a new Notification, or a Session that Needs you.
+The brief pop-up on the Edge announcing something that wants the user: a new Notification, a Session that Needs you, or a Timer or Pomodoro that is Ringing.
 _Avoid_: Banner, popup, agent alert
 
 **Banner**:
@@ -165,6 +165,36 @@ _Avoid_: Home, current city, my time zone
 **World Clock**:
 The only clock Widget kind: the current time in one or more Cities, including the local one.
 _Avoid_: Clock (as a separate kind)
+
+### Timing
+
+**Timer**:
+A Widget kind running one countdown. Several Timers means several Widgets. It counts down only; it has no stopwatch.
+_Avoid_: Countdown widget, alarm, stopwatch
+
+**Ringing**:
+The state of a Timer or Pomodoro whose countdown has run out: it pulses, plays its sound and raises a Toast (or a Rail button during a Takeover) until the user Taps it. Tapping a Ringing Pomodoro starts its next phase.
+_Avoid_: Done, finished, expired, alarm
+
+**Pomodoro**:
+A Widget kind that takes the user through Rounds of Work and Break, counting each phase down like a Timer.
+_Avoid_: Focus timer, Pomodoro timer (as a kind name)
+
+**Work**:
+The Pomodoro phase for concentrating. "Focus" is reserved for macOS Focus modes.
+_Avoid_: Focus, focus session, pomodoro session
+
+**Break**:
+The Pomodoro phase for resting after Work. The Break after a Cycle's last Work is the long one; there is no separate "long break" concept.
+_Avoid_: Rest, pause
+
+**Round**:
+One Work followed by its Break.
+_Avoid_: Pomodoro (for one unit), session, interval
+
+**Cycle**:
+The set of Rounds that ends with the long Break, after which the Pomodoro starts again at its first Round.
+_Avoid_: Set, session
 
 ### AI agents
 
@@ -227,6 +257,8 @@ _Avoid_: Lend, capture, share the keyboard, keyboard forwarding
 - The **Dashboard** has **Page dots** and one or more **Pages**; each **Page** has zero or more **Widgets**, each with exactly one **Widget kind** and one **Frame**.
 - A **Takeover** replaces the **Dashboard** on the **Edge** and owns the **Rail**; it is either a **Guest app** or an **Edge player**.
 - A **Launcher** has many **Buttons**; each **Button** has one **Action**.
+- A **Timer** or **Pomodoro** runs one countdown at a time and can have a title; a **Toast** lists every Widget that is **Ringing**.
+- A **Pomodoro** goes through **Cycles**; a **Cycle** has one or more **Rounds**; a **Round** is one **Work** then one **Break**. Neither phase starts until the user Taps.
 - An **Agent tool** has one or more **Profiles**; a **Profile** has zero or more **Sessions**.
 - The **Edge** has one **Host** and shows one **Source** at a time; when they differ, it is a **Remote view**. Only **Paired** Macs can be a **Source** for each other.
 - The **Host** can **Grab the keyboard** of one **Paired** Mac at a time, only while a **Guest app** is on the Edge.

@@ -199,6 +199,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
             if let kind = ProcessInfo.processInfo.environment["EDGEDECK_SNAPSHOT_CITY_EDITOR"].flatMap(WidgetKind.init(rawValue:)) {
                 model.cityEditorWidgetID = model.currentPage.widgets.first { $0.kind == kind }?.id
             }
+            // EDGEDECK_SNAPSHOT_TIMING_EDITOR=timer|pomodoro opens the Editor of the page's first such widget.
+            if let kind = ProcessInfo.processInfo.environment["EDGEDECK_SNAPSHOT_TIMING_EDITOR"].flatMap(WidgetKind.init(rawValue:)) {
+                model.timingEditorWidgetID = model.currentPage.widgets.first { $0.kind == kind }?.id
+            }
         }
     }
 
@@ -642,7 +646,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
         // Over a Plain display or a Remote view, this Mac's Toasts float above whatever is on the Edge.
         let remote = model.remoteHost.current != nil && model.remoteHost.pairingCode == nil
         let show = (model.plainDisplay || remote) && model.edgeConnected
-            && (!model.ai.toastSessions.isEmpty || (remote && model.notifications.toast != nil))
+            && (!model.ai.toastSessions.isEmpty || (remote && model.notifications.toast != nil)
+                || (model.plainDisplay && !model.timing.toastRinging.isEmpty))
         guard show, let screen = targetScreen() else {
             if toastPanel.isVisible { toastPanel.orderOut(nil) }
             return

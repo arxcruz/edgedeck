@@ -23,6 +23,8 @@ enum Theme {
         case .calendar: Color(hex: "#FF7A59")
         case .music: Color(hex: "#FC3C44")
         case .ai: Color(hex: "#D97757")
+        case .timer: Color(hex: "#FFB340")
+        case .pomodoro: Color(hex: "#FF5E57")
         }
     }
 

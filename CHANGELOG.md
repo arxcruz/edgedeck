@@ -3,6 +3,13 @@
 What changed in each EdgeDeck release. Downloads are on the
 [Releases](https://github.com/arxcruz/edgedeck/releases) page.
 
+## Unreleased
+
+- **Timer** and **Pomodoro** widgets: start a countdown with one tap on a chip, pause and resume
+  by tapping the time, and take Rounds of Work and Break. When one runs out it rings: the
+  widget pulses, a sound plays and a Toast says which (a button on the Rail during a
+  Takeover). Countdowns keep going across restarts and sleep.
+
 ## 0.1.3 — 2026-10-12
 
 - **Grab the keyboard:** with two Macs, type into the app on the Edge using the other Mac's

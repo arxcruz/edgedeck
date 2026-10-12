@@ -1,7 +1,7 @@
 import Foundation
 
 enum WidgetKind: String, Codable, CaseIterable, Identifiable {
-    case cpu, gpu, memory, disk, network, notifications, launcher, runningApps, nowPlaying, worldClock, weather, calendar, music, ai
+    case cpu, gpu, memory, disk, network, notifications, launcher, runningApps, nowPlaying, worldClock, weather, calendar, music, ai, timer, pomodoro
 
     var id: String { rawValue }
 
@@ -21,6 +21,8 @@ enum WidgetKind: String, Codable, CaseIterable, Identifiable {
         case .calendar: "Calendar"
         case .music: "Music"
         case .ai: "AI Agents"
+        case .timer: "Timer"
+        case .pomodoro: "Pomodoro"
         }
     }
 
@@ -40,6 +42,8 @@ enum WidgetKind: String, Codable, CaseIterable, Identifiable {
         case .calendar: "calendar"
         case .music: "music.note"
         case .ai: "sparkles"
+        case .timer: "timer"
+        case .pomodoro: "repeat.circle"
         }
     }
 
@@ -56,6 +60,7 @@ enum WidgetKind: String, Codable, CaseIterable, Identifiable {
         case .calendar: (7, 4)
         case .music: (14, 4)
         case .ai: (10, 4)
+        case .timer, .pomodoro: (6, 2)
         }
     }
 }
@@ -205,6 +210,12 @@ struct WidgetConfig: Codable, Hashable, Identifiable {
     var calendars: [String]?
     /// Calendar only: how many days to show, starting today.
     var days: Int?
+    /// Timer only: the durations offered as chips, in minutes.
+    var presets: [Int]?
+    /// Pomodoro only: how long each phase lasts.
+    var pomodoro: PomodoroLengths?
+    /// Timer and Pomodoro: the macOS system sound played when Ringing (e.g. "Glass").
+    var sound: String?
     /// Pre-pages configs sized widgets by relative width in a single row.
     var legacyWidth: Double?
 
@@ -215,10 +226,14 @@ struct WidgetConfig: Codable, Hashable, Identifiable {
         self.title = title
         self.buttons = buttons ?? (kind == .launcher ? [] : nil)
         if kind == .worldClock { cities = City.defaults }
+        if kind == .timer { presets = Self.defaultPresets }
+        if kind == .pomodoro { pomodoro = PomodoroLengths() }
     }
 
+    static let defaultPresets = [1, 5, 10, 25]
+
     /// `zones` is the old name of `cities`; `location` the old form of `city`.
-    enum CodingKeys: String, CodingKey { case id, kind = "type", frame, title, buttons, cities, zones, city, location, calendars, days, width }
+    enum CodingKeys: String, CodingKey { case id, kind = "type", frame, title, buttons, cities, zones, city, location, calendars, days, presets, pomodoro, sound, width }
 
     init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
@@ -243,6 +258,9 @@ struct WidgetConfig: Codable, Hashable, Identifiable {
             }
         calendars = try c.decodeIfPresent([String].self, forKey: .calendars)
         days = try c.decodeIfPresent(Int.self, forKey: .days)
+        presets = try c.decodeIfPresent([Int].self, forKey: .presets)
+        pomodoro = try c.decodeIfPresent(PomodoroLengths.self, forKey: .pomodoro)
+        sound = try c.decodeIfPresent(String.self, forKey: .sound)
         legacyWidth = try c.decodeIfPresent(Double.self, forKey: .width)
     }
 
@@ -257,6 +275,30 @@ struct WidgetConfig: Codable, Hashable, Identifiable {
         try c.encodeIfPresent(city, forKey: .city)
         try c.encodeIfPresent(calendars, forKey: .calendars)
         try c.encodeIfPresent(days, forKey: .days)
+        try c.encodeIfPresent(presets, forKey: .presets)
+        try c.encodeIfPresent(pomodoro, forKey: .pomodoro)
+        try c.encodeIfPresent(sound, forKey: .sound)
+    }
+}
+
+/// A Pomodoro's phase lengths in minutes, and how many Rounds make a Cycle.
+struct PomodoroLengths: Codable, Hashable {
+    var work = 25
+    /// The Break after every Work but the Cycle's last.
+    var shortBreak = 5
+    /// The Break that ends the Cycle.
+    var longBreak = 15
+    var rounds = 4
+
+    init() {}
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        let d = PomodoroLengths()
+        work = max(1, try c.decodeIfPresent(Int.self, forKey: .work) ?? d.work)
+        shortBreak = max(1, try c.decodeIfPresent(Int.self, forKey: .shortBreak) ?? d.shortBreak)
+        longBreak = max(1, try c.decodeIfPresent(Int.self, forKey: .longBreak) ?? d.longBreak)
+        rounds = max(1, try c.decodeIfPresent(Int.self, forKey: .rounds) ?? d.rounds)
     }
 }
 
@@ -496,6 +538,14 @@ struct AppConfig: Codable, Hashable {
 
 /// Loads, saves and live-reloads ~/Library/Application Support/EdgeDeck/config.json.
 final class ConfigStore: ObservableObject {
+    /// ~/Library/Application Support/EdgeDeck. EDGEDECK_CONFIG_DIR=<dir> uses another folder for
+    /// config.json and Timer state, so a test run never touches the real ones.
+    static var directory: URL {
+        if let dir = ProcessInfo.processInfo.environment["EDGEDECK_CONFIG_DIR"] { return URL(fileURLWithPath: dir, isDirectory: true) }
+        return FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+            .appendingPathComponent("EdgeDeck", isDirectory: true)
+    }
+
     @Published private(set) var config: AppConfig
     @Published private(set) var lastError: String?
 
@@ -503,8 +553,7 @@ final class ConfigStore: ObservableObject {
     private var watcher: DispatchSourceFileSystemObject?
 
     init() {
-        let dir = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
-            .appendingPathComponent("EdgeDeck", isDirectory: true)
+        let dir = Self.directory
         try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         url = dir.appendingPathComponent("config.json")
         config = .default

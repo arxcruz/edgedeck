@@ -130,6 +130,9 @@ title, colour and icon, with **Try** to test it.
 
 **World Clock Cities** and **Weather City**, by region, with Local for wherever the Mac is.
 
+**Timer** and **Pomodoro**: the title, the Timer's chips or the Pomodoro's lengths and Rounds,
+and the sound played when Ringing.
+
 ![World Clock Cities editor](docs/screenshots/world-clock-cities.png)
 ![Weather City editor](docs/screenshots/weather-city.png)
 
@@ -344,7 +347,7 @@ which is also live-reloaded when you edit it by hand:
 
 Widget types: `cpu`, `gpu`, `memory`, `disk`, `network`,
 `notifications`, `launcher`, `runningApps`, `nowPlaying`, `worldClock`, `weather`,
-`calendar`, `music`, `ai`. Older `clock` widgets become a World Clock showing
+`calendar`, `music`, `ai`, `timer`, `pomodoro`. Older `clock` widgets become a World Clock showing
 the Local city, which looks the same. Older single-row configs are converted automatically (the original is kept
 as `config.v1-backup.json`).
 
@@ -439,6 +442,37 @@ The first time, tap **Allow Calendar Access** on the widget. Optional settings:
 
 `days` is how many days to show starting today (1–7, default 2); `calendars`
 limits it to those calendar names (all by default).
+
+## Timer & Pomodoro
+
+`timer` counts down from one of its chips (1, 5, 10 and 25 min by default; up to six, chosen
+in its Editor): tap a chip to start. Tap the time to pause or resume; **+1 min** adds a minute
+while it runs, and **Reset** appears once it's paused. Tapping the time on a stopped Timer
+starts its last length again. Each Timer runs one countdown, so add a Timer per thing you're
+timing and give each a title ("Tea", "Laundry").
+
+`pomodoro` takes you through Rounds of **Work** and **Break** (25 and 5 min by default; the
+last Break of each Cycle of 4 Rounds is 15 min), with a dot per Round. Nothing starts on its
+own: tap **Start Work**, and when a phase ends, one tap starts the next. Paused, it offers
+**Skip** (to the next phase) and **Reset Cycle**.
+
+When a countdown runs out, the widget is **Ringing**: it pulses, plays its sound three times
+(Glass by default, at the Mac's volume, so a muted Mac stays silent), and a Toast lists
+everything Ringing. Tap the widget or its row on the Toast to stop it (a Pomodoro starts its
+next phase); ✕ on the Toast silences everything, but the widgets keep pulsing until tapped.
+During a Takeover a button on the Rail stands in for the Toast. On a small widget (one row
+tall) the chips show while it's stopped and the time while it counts.
+
+Countdowns are kept by when they end, in `timers.json` beside `config.json`, so they keep
+going across restarts and sleep (one that ran out meanwhile rings when EdgeDeck is back). In
+`config.json`:
+
+```json
+{ "type": "timer", "title": "Tea", "presets": [3, 5], "sound": "Ping" }
+{ "type": "pomodoro", "pomodoro": { "work": 25, "shortBreak": 5, "longBreak": 15, "rounds": 4 } }
+```
+
+`sound` is any sound in `/System/Library/Sounds` (without `.aiff`).
 
 ## Music
 
@@ -631,6 +665,8 @@ the Edge (see Show Preview above) rather than taking over another display.
 writes a PNG of the dashboard every 3 seconds.
 `EDGEDECK_NO_EDGE=1` behaves as if the Edge were unplugged; add
 `EDGEDECK_SNAPSHOT_PREVIEW=1` to open the preview and save it as `<path>-preview.png`.
+`EDGEDECK_CONFIG_DIR=<dir>` reads `config.json` and `timers.json` from another folder, so a
+test run leaves your own untouched.
 
 ## Plans for the future
 
@@ -646,6 +682,8 @@ Ideas I may get to, in no particular order:
 - **More AI agents**: other coding agents, such as Antigravity or Codex, in the AI
   Agents widget.
 - **Now Playing**: a volume slider and ±15 s skip buttons.
+- **Widget themes**: choose a background colour or theme for each Widget, in its Editor.
+- **Analog faces**: show Timer, Pomodoro and World Clock as an analog dial instead of digits.
 
 ## License
 

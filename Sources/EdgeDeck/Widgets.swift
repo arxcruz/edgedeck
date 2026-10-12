@@ -20,6 +20,8 @@ struct WidgetView: View {
         case .calendar: CalendarWidget(widget: widget)
         case .music: MusicWidget(widget: widget)
         case .ai: AIWidget(widget: widget)
+        case .timer: TimerWidget(widget: widget)
+        case .pomodoro: PomodoroWidget(widget: widget)
         }
     }
 }
