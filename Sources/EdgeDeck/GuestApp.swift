@@ -114,7 +114,11 @@ final class GuestAppManager: ObservableObject {
     }
 
     func bringToEdge(_ window: AXUIElement, of app: NSRunningApplication) {
-        guard screenFrame != .zero, let originalFrame = AX.frame(of: window) else { return }
+        guard screenFrame != .zero else { return }
+        guard let originalFrame = AX.frame(of: window) else {
+            lastError = "Couldn't move \(app.localizedName ?? "the app")'s window"
+            return
+        }
         if let current, CFEqual(current.window, window) {
             AX.setFrame(window, current.edgeFrame)
             return

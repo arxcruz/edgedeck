@@ -62,6 +62,9 @@ final class AppModel: ObservableObject {
             .store(in: &cancellables)
 
         ai.learnedProfile = { [weak self] path in self?.addClaudeDir(path) }
+        ai.showMessage = { [weak self] text in self?.flashPlayerMessage(text) }
+        // Bringing an app to the Edge can fail out of sight (no window, no Accessibility for it): say so.
+        guest.$lastError.compactMap { $0 }.sink { [weak self] text in self?.flashPlayerMessage(text) }.store(in: &cancellables)
         touch.plainDisplay = plainDisplay
         touch.onEdgeSwipe = { [weak self] in self?.plainDisplay = false }
         ActionRunner.showPlainDisplay = { [weak self] in self?.plainDisplay = true }
@@ -187,7 +190,9 @@ final class AppModel: ObservableObject {
 
     /// Brings the terminal tab of a Session that Needs you onto the Edge as the Guest app.
     func bringToEdge(_ session: AgentSession) {
-        guard let app = ai.terminal(of: session) else { return }
+        guard let app = ai.terminal(of: session) else {
+            return flashPlayerMessage("Couldn't find the terminal running this session")
+        }
         let wasPlain = plainDisplay
         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
             self?.ai.selectTerminalTab(of: session)

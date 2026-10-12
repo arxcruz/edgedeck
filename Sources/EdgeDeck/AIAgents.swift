@@ -634,9 +634,13 @@ final class AIModel: ObservableObject {
         }
     }
 
+    /// Shows a short message on the Edge (the app wires it to the Dashboard's message line).
+    var showMessage: (String) -> Void = { _ in }
+
     /// Brings the terminal running a session forward.
     func focus(_ session: AgentSession) {
-        terminal(of: session)?.activate()
+        guard let app = terminal(of: session) else { return showMessage("Couldn't find the terminal running this session") }
+        app.activate()
     }
 
     /// Selects the terminal tab a Session runs in (iTerm2 and Terminal know each tab's tty), so
@@ -702,10 +706,28 @@ final class AIModel: ObservableObject {
 
     /// The app (usually a terminal) a Session's process runs under.
     func terminal(of session: AgentSession) -> NSRunningApplication? {
-        guard var pid = session.pid else { return nil }
+        guard let pid = session.pid else { return nil }
+        return Self.app(above: pid)
+    }
+
+    /// The first ordinary app among a process and its parents.
+    private static func app(above start: pid_t) -> NSRunningApplication? {
+        var pid = start
         for _ in 0..<12 {
             if let app = NSRunningApplication(processIdentifier: pid), app.activationPolicy == .regular { return app }
+            // iTerm2 runs sessions under an iTermServer process that outlives iTerm2 itself: after
+            // iTerm2 restarts (an update, session restore), its parent is launchd, not iTerm2.
+            if processName(pid).hasPrefix("iTermServer") {
+                return NSRunningApplication.runningApplications(withBundleIdentifier: "com.googlecode.iterm2").first
+            }
             let parent = Self.parentPID(pid)
+            // A tmux server detaches from its terminal; the terminal is the attached client's.
+            if parent <= 1, Self.processName(pid) == "tmux" {
+                for client in Self.pids(named: "tmux") where client != pid && Self.tty(of: client) != nil {
+                    if let app = app(above: client) { return app }
+                }
+                return nil
+            }
             guard parent > 1 else { return nil }
             pid = parent
         }
