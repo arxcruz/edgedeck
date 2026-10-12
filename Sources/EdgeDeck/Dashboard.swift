@@ -112,9 +112,20 @@ struct DashboardView: View {
                         .transition(.move(edge: .top).combined(with: .opacity))
                 }
             }
+
+            if !railVisible, let notice = model.keychainNotice {
+                KeychainNoticeView(notice: notice, compact: false)
+            }
         }
         .overlay(alignment: .trailing) {
-            if railVisible { Rail().frame(width: railWidth) }
+            // During a Takeover only the Rail is visible, so the explanation takes its place.
+            if railVisible {
+                if let notice = model.keychainNotice {
+                    KeychainNoticeView(notice: notice, compact: true).frame(width: railWidth)
+                } else {
+                    Rail().frame(width: railWidth)
+                }
+            }
         }
         .animation(.spring(response: 0.35, dampingFraction: 0.85), value: model.notifications.toast)
         .animation(.spring(response: 0.35, dampingFraction: 0.85), value: model.ai.toastSessions)
@@ -375,7 +386,10 @@ extension Rail {
     @ViewBuilder
     var keyboardButtons: some View {
         let keyboard = model.keyboard
-        if let name = keyboard.grabbed {
+        if let name = keyboard.grabbed, keyboard.waiting {
+            // The other Mac is asking for its password before lending its keyboard.
+            RailButton(title: "Waiting for \(name): answer there", symbol: "key.fill", tint: Color(hex: "#FF9F0A")) { keyboard.release() }
+        } else if let name = keyboard.grabbed {
             RailButton(title: keyboard.paused ? "Keyboard paused" : "Release keyboard", symbol: "keyboard.chevron.compact.down",
                        tint: Color(hex: keyboard.paused ? "#FF9F0A" : "#0A84FF")) { keyboard.release() }
                 .accessibilityLabel("Release \(name)'s keyboard")
@@ -386,6 +400,82 @@ extension Rail {
                 }
             }
         }
+    }
+}
+
+/// Before macOS's password prompt for a Pairing secret saved by an earlier version: what's about
+/// to happen and why, or Pair again instead. Full size over the Dashboard, or in the Rail.
+struct KeychainNoticeView: View {
+    @EnvironmentObject var model: AppModel
+    let notice: AppModel.KeychainNotice
+    let compact: Bool
+    @State private var hideFromNowOn = false
+
+    var body: some View {
+        let text = "EdgeDeck keeps its Pairing with \(notice.name) in your keychain. An earlier version saved it, so macOS asks once before this one can use it. The dialog opens on this Mac's main screen: enter your password and choose Always Allow."
+        Group {
+            if compact {
+                VStack(spacing: 12) {
+                    Image(systemName: "key.fill").font(.system(size: 26, weight: .bold)).foregroundStyle(Color(hex: "#FF9F0A"))
+                    Text("macOS will ask for your password").font(.system(size: 14, weight: .bold, design: .rounded))
+                    Text(text).font(.system(size: 11, weight: .medium, design: .rounded)).foregroundStyle(Theme.secondaryText)
+                        .minimumScaleFactor(0.8)
+                    Spacer(minLength: 0)
+                    buttons
+                }
+                .multilineTextAlignment(.center)
+                .padding(10)
+                .frame(maxHeight: .infinity)
+                .background(Theme.tile)
+            } else {
+                ZStack {
+                    Color.black.opacity(0.7).contentShape(Rectangle())
+                    VStack(spacing: 16) {
+                        Label("macOS will ask for your password", systemImage: "key.fill")
+                            .font(.system(size: 24, weight: .bold, design: .rounded))
+                        Text(text).font(.system(size: 16, weight: .medium, design: .rounded)).foregroundStyle(Theme.secondaryText)
+                            .multilineTextAlignment(.center)
+                            .frame(maxWidth: 820)
+                        HStack(spacing: 14) { buttons }
+                    }
+                    .padding(28)
+                    .background(Theme.tileRaised, in: RoundedRectangle(cornerRadius: 24, style: .continuous))
+                }
+            }
+        }
+        .foregroundStyle(.white)
+    }
+
+    @ViewBuilder
+    private var buttons: some View {
+        choice("Continue", fill: Theme.accent(for: .ai), text: .black) { notice.proceed() }
+        choice("Pair again", fill: Theme.tile, text: .white) { notice.pairAgain() }
+        choice("Cancel", fill: Theme.tile, text: Theme.secondaryText) {}
+        Button { hideFromNowOn.toggle() } label: {
+            Label("Don't show this again", systemImage: hideFromNowOn ? "checkmark.square.fill" : "square")
+                .font(.system(size: compact ? 12 : 15, weight: .semibold, design: .rounded))
+                .foregroundStyle(hideFromNowOn ? .white : Theme.secondaryText)
+                .frame(minHeight: 44)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(PressableStyle())
+    }
+
+    private func choice(_ title: String, fill: Color, text: Color, action: @escaping () -> Void) -> some View {
+        Button {
+            if hideFromNowOn { RemoteKeychain.noticeHidden = true }
+            model.keychainNotice = nil
+            action()
+        } label: {
+            Text(title)
+                .font(.system(size: compact ? 14 : 17, weight: .bold, design: .rounded))
+                .foregroundStyle(text)
+                .padding(.horizontal, 20)
+                .frame(maxWidth: compact ? .infinity : nil, minHeight: 50)
+                .background(fill, in: Capsule())
+                .contentShape(Capsule())
+        }
+        .buttonStyle(PressableStyle())
     }
 }
 

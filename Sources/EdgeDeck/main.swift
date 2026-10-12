@@ -122,6 +122,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
             }
             .store(in: &cancellables)
         model.remoteSource.onPairRequest = { [weak self] hostName, answer in self?.askForPairingCode(hostName, answer) }
+        model.remoteSource.beforeReading = { [weak self] hostName, answer in self?.explainKeychain(hostName, answer) }
+        model.keyboardLender.beforeReading = { [weak self] hostName, answer in self?.explainKeychain(hostName, answer) }
 
         // Blank cover over the menu bar on the Edge only. It's opaque to clicks so taps
         // there don't open invisible menus.
@@ -443,22 +445,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
         remoteItem.isEnabled = model.edgeConnected
     }
 
-    /// On the Source: a Host wants to Pair, and its Edge shows the code.
+    /// Another Mac connects, and reading the Pairing secret saved by an earlier EdgeDeck will make
+    /// macOS ask for the password: say why first, or Pair again instead. Not a modal dialog: while
+    /// one is up, macOS drops every touch on the Edge.
+    private func explainKeychain(_ hostName: String, _ answer: @escaping (_ pairAgain: Bool) -> Void) {
+        PromptWindow.show(title: "EdgeDeck", cancel: { answer(false) }) { close in
+            KeychainPrompt(hostName: hostName) { pairAgain in close(); answer(pairAgain) }
+        }
+    }
+
+    /// On the Source: a Host wants to Pair, and its Edge shows the code. Not modal (see above).
     private func askForPairingCode(_ hostName: String, _ answer: @escaping (String?) -> Void) {
-        let alert = NSAlert()
-        alert.messageText = "Show this Mac's Dashboard on \(hostName)'s Edge?"
-        alert.informativeText = "Type the 6-digit code shown on the Edge. You only need to do this once."
-        let field = NSTextField(frame: NSRect(x: 0, y: 0, width: 200, height: 28))
-        field.font = .monospacedSystemFont(ofSize: 18, weight: .semibold)
-        field.placeholderString = "123456"
-        alert.accessoryView = field
-        alert.addButton(withTitle: "Pair")
-        alert.addButton(withTitle: "Cancel")
-        alert.window.initialFirstResponder = field
-        NSApp.activate()
-        let ok = alert.runModal() == .alertFirstButtonReturn
-        let code = field.stringValue.filter(\.isNumber)
-        answer(ok && code.count == 6 ? code : nil)
+        PromptWindow.show(title: "Pair with \(hostName)", cancel: { answer(nil) }) { close in
+            PairingPrompt(hostName: hostName) { code in close(); answer(code) }
+        }
     }
 
     // MARK: Keyboard

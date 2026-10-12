@@ -21,10 +21,14 @@ final class KeyboardGrabber: ObservableObject {
     @Published private(set) var grabbed: String?
     /// Its keys are paused: a password field is in use over there.
     @Published private(set) var paused = false
+    /// The other Mac is asking its user something (a password prompt) before lending.
+    @Published private(set) var waiting = false
     /// The keyboard was released on its own (or couldn't be grabbed); the reason, for the Edge.
     var onProblem: (String) -> Void = { _ in }
     /// The keyboard now types here: bring the Guest app forward so the keys reach it.
     var onGrabbed: () -> Void = {}
+    /// Runs before connecting: the app explains macOS's password prompt first when needed.
+    var beforeConnect: (_ name: String, _ proceed: @escaping () -> Void) -> Void = { $1() }
 
     private var browser: NWBrowser?
     private var found: [String] = []
@@ -60,6 +64,10 @@ final class KeyboardGrabber: ObservableObject {
     }
 
     func grab(_ name: String) {
+        beforeConnect(name) { [weak self] in self?.connect(name) }
+    }
+
+    private func connect(_ name: String) {
         stop()
         let channel = RemoteChannel(NWConnection(to: .service(name: name, type: RemoteWire.keyboardServiceType, domain: "local.", interface: nil),
                                                  using: RemoteWire.parameters))
@@ -101,6 +109,8 @@ final class KeyboardGrabber: ObservableObject {
         if grabbed != nil { grabbed = nil }
         if paused { paused = false }
         lent = false
+        readingSecret = false
+        if waiting { waiting = false }
     }
 
     private func lose(_ reason: String) {
@@ -110,25 +120,46 @@ final class KeyboardGrabber: ObservableObject {
 
     private func tick() {
         channel?.send(.ping)
-        if Date().timeIntervalSince(lastHeard) > 2, let name = grabbed { lose("Lost \(name): its keyboard is released") }
+        guard !readingSecret, let name = grabbed else { return }
+        if waiting, Date().timeIntervalSince(lastHeard) > 120 {
+            lose("\(name) is still asking for a password: answer it there, then grab again")
+        } else if !waiting, Date().timeIntervalSince(lastHeard) > 2 {
+            lose(lent ? "Lost \(name): its keyboard is released"
+                 : "Couldn't reach \(name): is EdgeDeck running there? If it's asking for a password, answer it and try again")
+        }
     }
+
+    /// Waiting for macOS's password prompt to read the Pairing secret: no timeout meanwhile.
+    private var readingSecret = false
 
     private func received(_ kind: RemoteWire.Kind, _ payload: Data) {
         guard let channel, let name = grabbed else { return }
         lastHeard = Date()
+        if kind != .ping, waiting != (kind == .waiting) { waiting = kind == .waiting }
         switch kind {
         case .hello:
             guard payload.count >= 18, payload[payload.startIndex] == RemoteWire.version,
                   let status = RemoteWire.HelloStatus(rawValue: payload[payload.startIndex + 1]), status != .versionMismatch else {
                 return lose("\(name) runs a different EdgeDeck version: update both Macs")
             }
-            guard status == .paired, let secret = RemoteKeychain.secret(for: "source:" + name) else {
-                return lose("Pair with \(name) first: tap the pill at the bottom right and choose it")
+            guard status == .paired else {
+                return lose("Pair with \(name) first: send the app back, tap the pill at the bottom right and choose \(name)")
             }
             let sourceSalt = payload.subdata(in: payload.startIndex + 2 ..< payload.startIndex + 18)
-            let keys = RemoteChannel.keys(from: secret, hostSalt: salt, sourceSalt: sourceSalt)
-            channel.seal(outgoing: keys.hostToSource, incoming: keys.sourceToHost)
-            channel.send(.grab)
+            // May show macOS's password prompt; pings keep the link alive meanwhile.
+            readingSecret = true
+            RemoteKeychain.read("source:" + name) { [weak self, weak channel] secret in
+                guard let self, let channel, self.channel === channel else { return }
+                self.readingSecret = false
+                self.lastHeard = Date()
+                guard let secret else {
+                    RemoteKeychain.forget("source:" + name)
+                    return self.lose("EdgeDeck couldn't use its Pairing with \(name): Pair again from the pill at the bottom right")
+                }
+                let keys = RemoteChannel.keys(from: secret, hostSalt: self.salt, sourceSalt: sourceSalt)
+                channel.seal(outgoing: keys.hostToSource, incoming: keys.sourceToHost)
+                channel.send(.grab)
+            }
         case .lending:
             guard let status = payload.first.flatMap(RemoteWire.LendStatus.init(rawValue:)) else { return }
             switch status {
@@ -216,6 +247,9 @@ final class KeyboardLender: ObservableObject {
             if !allowed, lentTo != nil { takeBack() }
         }
     }
+    /// Before reading a Pairing secret: the app may explain macOS's password prompt, or offer to
+    /// Pair again instead (`answer(true)`; Pairing itself happens in Remote view).
+    var beforeReading: (_ hostName: String, _ answer: @escaping (_ pairAgain: Bool) -> Void) -> Void = { $1(false) }
     /// Always releases the keyboard, even while every other key goes to the other Mac.
     @Published var shortcut: KeyShortcut = KeyboardLender.savedShortcut() {
         didSet {
@@ -236,6 +270,8 @@ final class KeyboardLender: ObservableObject {
     private var timer: Timer?
     private var tap: CFMachPort?
     private var tapSource: CFRunLoopSource?
+    /// Asking this Mac's user something before lending: the Host is told to wait.
+    private var asking = false
 
     private static func savedShortcut() -> KeyShortcut {
         let defaults = UserDefaults.standard
@@ -278,7 +314,10 @@ final class KeyboardLender: ObservableObject {
             if let channel, self?.channel === channel { self?.stop() }
         }
         channel.start()
-        timer = Timer.scheduledTimer(withTimeInterval: 0.5, repeats: true) { [weak self] _ in self?.tick() }
+        // Common modes: keeps pinging while a dialog (the explanation, macOS's prompt) is up.
+        let timer = Timer(timeInterval: 0.5, repeats: true) { [weak self] _ in self?.tick() }
+        RunLoop.main.add(timer, forMode: .common)
+        self.timer = timer
     }
 
     private func received(_ kind: RemoteWire.Kind, _ payload: Data) {
@@ -296,13 +335,22 @@ final class KeyboardLender: ObservableObject {
             hostSalt = payload.subdata(in: payload.startIndex + 17 ..< payload.startIndex + 33)
             hostName = String(decoding: payload.dropFirst(38), as: UTF8.self)
             // Pairing happens only in Remote view; unpaired Macs are just told so.
-            guard payload[payload.startIndex + 33] == 1, let secret = RemoteKeychain.secret(for: "host:" + hostID) else {
-                channel.send(.hello, Data([RemoteWire.version, RemoteWire.HelloStatus.needsCode.rawValue]) + salt)
-                return
+            let account = "host:" + hostID
+            let notPaired = { channel.send(.hello, Data([RemoteWire.version, RemoteWire.HelloStatus.needsCode.rawValue]) + self.salt) }
+            guard payload[payload.startIndex + 33] == 1, RemoteKeychain.has(account) else { return notPaired() }
+            asking = RemoteKeychain.peek(account) == .needsPassword
+            RemoteKeychain.explainFirst(account, hostName, beforeReading) { [weak self, weak channel] pairAgain in
+                guard let self, let channel, self.channel === channel else { return }
+                if pairAgain { self.asking = false; RemoteKeychain.forget(account); return notPaired() }
+                RemoteKeychain.read(account) { [weak self, weak channel] secret in
+                    guard let self, let channel, self.channel === channel else { return }
+                    self.asking = false
+                    guard let secret else { return notPaired() }
+                    channel.send(.hello, Data([RemoteWire.version, RemoteWire.HelloStatus.paired.rawValue]) + self.salt)
+                    let keys = RemoteChannel.keys(from: secret, hostSalt: self.hostSalt, sourceSalt: self.salt)
+                    channel.seal(outgoing: keys.sourceToHost, incoming: keys.hostToSource)
+                }
             }
-            channel.send(.hello, Data([RemoteWire.version, RemoteWire.HelloStatus.paired.rawValue]) + salt)
-            let keys = RemoteChannel.keys(from: secret, hostSalt: hostSalt, sourceSalt: salt)
-            channel.seal(outgoing: keys.sourceToHost, incoming: keys.hostToSource)
         case .grab:
             guard allowed else { return refuse(.notAllowed) }
             guard !Self.screenLocked else { return refuse(.locked) }
@@ -323,7 +371,7 @@ final class KeyboardLender: ObservableObject {
     }
 
     private func tick() {
-        channel?.send(.ping)
+        channel?.send(asking ? .waiting : .ping)
         if Date().timeIntervalSince(lastHeard) > 2 { return stop() }
         guard lentTo != nil else { return }
         let secure = IsSecureEventInputEnabled()
@@ -342,6 +390,7 @@ final class KeyboardLender: ObservableObject {
         channel?.close()
         if lentTo != nil { lentTo = nil }
         if paused { paused = false }
+        asking = false
     }
 
     private static var screenLocked: Bool {

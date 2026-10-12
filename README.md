@@ -50,10 +50,13 @@ Things that trip people up:
   tccutil reset ListenEvent com.arxcruz.edgedeck
   ```
 
-- **After an update, macOS may ask for your password** because "EdgeDeck wants to use
-  your confidential information stored in EdgeDeck Remote view" in your keychain. That's
-  EdgeDeck reading its own Pairing secret for another Mac (Remote view, Grab the keyboard),
-  saved by the previous version; click **Always Allow**. Like the permissions above, it's
+- **If you use EdgeDeck on two or more Macs** (Remote view, Grab the keyboard), macOS may
+  ask for your password after an update: "EdgeDeck wants to use your confidential
+  information stored in EdgeDeck Remote view" in your keychain. That's EdgeDeck reading its
+  own Pairing secret for the other Mac, saved by the previous version; click **Always
+  Allow**. EdgeDeck explains this before macOS asks (you can turn that off with "Don't show
+  this again"), asks at most once per launch, and offers **Pair again** (with a new code,
+  no password) if you'd rather not. With a single Mac you never see this. Like the permissions above, it's
   asked again after each update because the signature changes.
 - The prompts and System Settings open on your main display, not on the Edge.
 

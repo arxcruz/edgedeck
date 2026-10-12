@@ -52,6 +52,11 @@ enum RemoteWire {
         case release
         /// Keyboard link, Paired Mac → Host: `[status]`, see `LendStatus`.
         case lending
+        /// Source / Paired Mac → Host, instead of a ping while the user is being asked something
+        /// there (EdgeDeck's explanation, macOS's password prompt): keep waiting, and say so.
+        case waiting
+        /// Source → Host, just before it hangs up: why (UTF-8), for the Edge to show.
+        case problem
     }
 
     enum LendStatus: UInt8 {
@@ -174,10 +179,9 @@ final class RemoteChannel {
             guard length > 0, length < 64 << 20 else { return self.close() }
             self.connection.receive(minimumIncompleteLength: length, maximumLength: length) { [weak self] body, _, _, error in
                 guard let self, error == nil, let body, body.count == length else { self?.close(); return }
-                guard let opened = self.open(body), let kind = opened.first.flatMap(RemoteWire.Kind.init(rawValue:)) else {
-                    return self.close()
-                }
-                self.onMessage(kind, opened.dropFirst())
+                guard let opened = self.open(body), let first = opened.first else { return self.close() }
+                // A kind this version doesn't know (a newer Mac's) is skipped, not an error.
+                if let kind = RemoteWire.Kind(rawValue: first) { self.onMessage(kind, opened.dropFirst()) }
                 self.receive()
             }
         }
@@ -221,25 +225,62 @@ final class RemoteChannel {
 }
 
 /// The Pairing secrets, in the Keychain: "source:<name>" on a Host, "host:<id>" on a Source.
+///
+/// A secret saved by a differently signed build (every ad-hoc release is one) can only be read
+/// after macOS asks for the user's password. So: each secret is read at most once per launch
+/// (then cached), off the main thread (the prompt blocks the reading thread, and connections must
+/// keep pinging meanwhile), a refusal isn't asked again this launch, and `peek` tells beforehand
+/// whether reading will prompt, so EdgeDeck can explain first. Main thread only, except the read.
 enum RemoteKeychain {
     private static let service = "EdgeDeck Remote view"
+    private static var cache: [String: SymmetricKey] = [:]
+    private static var refused: Set<String> = []
 
-    static func secret(for account: String) -> SymmetricKey? {
-        let query: [CFString: Any] = [kSecClass: kSecClassGenericPassword, kSecAttrService: service,
-                                      kSecAttrAccount: account, kSecReturnData: true]
-        var result: AnyObject?
-        guard SecItemCopyMatching(query as CFDictionary, &result) == errSecSuccess, let data = result as? Data else { return nil }
-        return SymmetricKey(data: data)
+    enum Peek { case ready, needsPassword, missing }
+
+    /// Users can turn EdgeDeck's own explanation before the password prompt off.
+    static var noticeHidden: Bool {
+        get { UserDefaults.standard.bool(forKey: "keychainNotice.hidden") }
+        set { UserDefaults.standard.set(newValue, forKey: "keychainNotice.hidden") }
     }
 
-    /// Whether a secret is stored, without reading it: no Keychain prompt, even for a new build
-    /// (reading one saved by a differently signed build asks the user).
+    /// Whether reading `account` can happen silently, needs macOS's password prompt, or finds nothing.
+    static func peek(_ account: String) -> Peek {
+        if cache[account] != nil { return .ready }
+        let (secret, status) = copy(account, prompt: false)
+        if let secret { cache[account] = secret; return .ready }
+        return status == errSecInteractionNotAllowed ? .needsPassword : .missing
+    }
+
+    /// Runs `explain` (which may answer "Pair again") only when reading `account` will make macOS
+    /// ask for the password and the user hasn't turned the explanation off; otherwise goes on.
+    static func explainFirst(_ account: String, _ name: String,
+                             _ explain: (String, @escaping (Bool) -> Void) -> Void, then: @escaping (_ pairAgain: Bool) -> Void) {
+        if !noticeHidden, peek(account) == .needsPassword { explain(name, then) } else { then(false) }
+    }
+
+    /// Whether a secret is stored, without reading it (never prompts).
     static func has(_ account: String) -> Bool {
+        if cache[account] != nil { return true }
         let query: [CFString: Any] = [kSecClass: kSecClassGenericPassword, kSecAttrService: service,
                                       kSecAttrAccount: account, kSecReturnAttributes: true,
                                       kSecUseAuthenticationUI: kSecUseAuthenticationUISkip]
         var result: AnyObject?
         return SecItemCopyMatching(query as CFDictionary, &result) == errSecSuccess
+    }
+
+    /// The secret, possibly after macOS's password prompt; `done` runs on the main thread with nil
+    /// if there's none or the user refused (then it isn't asked again until EdgeDeck restarts).
+    static func read(_ account: String, _ done: @escaping (SymmetricKey?) -> Void) {
+        if let secret = cache[account] { return done(secret) }
+        if refused.contains(account) { return done(nil) }
+        DispatchQueue.global(qos: .userInitiated).async {
+            let (secret, status) = copy(account, prompt: true)
+            DispatchQueue.main.async {
+                if let secret { cache[account] = secret } else if status != errSecItemNotFound { refused.insert(account) }
+                done(secret)
+            }
+        }
     }
 
     static func store(_ secret: SymmetricKey, for account: String) {
@@ -249,11 +290,24 @@ enum RemoteKeychain {
                                      kSecAttrAccount: account, kSecValueData: data,
                                      kSecAttrLabel: "EdgeDeck Remote view (\(account))"]
         SecItemAdd(item as CFDictionary, nil)
+        cache[account] = secret
     }
 
     static func forget(_ account: String) {
-        let query: [CFString: Any] = [kSecClass: kSecClassGenericPassword, kSecAttrService: service, kSecAttrAccount: account]
+        cache[account] = nil
+        refused.remove(account)
+        let query: [CFString: Any] = [kSecClass: kSecClassGenericPassword, kSecAttrService: service, kSecAttrAccount: account,
+                                      kSecUseAuthenticationUI: kSecUseAuthenticationUISkip]
         SecItemDelete(query as CFDictionary)
+    }
+
+    private static func copy(_ account: String, prompt: Bool) -> (SymmetricKey?, OSStatus) {
+        var query: [CFString: Any] = [kSecClass: kSecClassGenericPassword, kSecAttrService: service,
+                                      kSecAttrAccount: account, kSecReturnData: true]
+        if !prompt { query[kSecUseAuthenticationUI] = kSecUseAuthenticationUISkip }
+        var result: AnyObject?
+        let status = SecItemCopyMatching(query as CFDictionary, &result)
+        return ((result as? Data).map { SymmetricKey(data: $0) }, status)
     }
 }
 

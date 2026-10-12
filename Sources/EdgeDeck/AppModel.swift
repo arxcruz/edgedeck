@@ -23,6 +23,16 @@ final class AppModel: ObservableObject {
     let keyboard = KeyboardGrabber()
     let keyboardLender = KeyboardLender()
 
+    /// Shown on the Edge before macOS asks for the password to read a Pairing secret saved by
+    /// an earlier version (see RemoteKeychain): what's about to happen, or Pair again instead.
+    struct KeychainNotice: Identifiable {
+        let id = UUID()
+        let name: String
+        let proceed: () -> Void
+        let pairAgain: () -> Void
+    }
+    @Published var keychainNotice: KeychainNotice?
+
     /// Whether the Xeneon Edge is plugged in; set by the app delegate.
     @Published var edgeConnected = true
     @Published var editing = false {
@@ -95,6 +105,18 @@ final class AppModel: ObservableObject {
         remoteHost.onProblem = { [weak self] text in self?.flashPlayerMessage(text) }
         keyboard.onProblem = { [weak self] text in self?.flashPlayerMessage(text) }
         keyboard.onGrabbed = { [weak self] in self?.guest.activate() }
+        remoteHost.beforeConnect = { [weak self] name, proceed in
+            self?.explainKeychain(for: name, proceed: proceed) {
+                RemoteKeychain.forget("source:" + name)
+                proceed()   // connecting without a secret Pairs with a code
+            }
+        }
+        keyboard.beforeConnect = { [weak self] name, proceed in
+            self?.explainKeychain(for: name, proceed: proceed) {
+                RemoteKeychain.forget("source:" + name)
+                self?.flashPlayerMessage("To Pair again, send the app back, tap the pill at the bottom right and choose \(name)")
+            }
+        }
         // A grabbed keyboard belongs to one Guest app: released when it goes or another replaces it.
         guest.$current
             .map { $0?.pid }
@@ -130,6 +152,11 @@ final class AppModel: ObservableObject {
     }
 
     var config: AppConfig { configStore.config }
+
+    private func explainKeychain(for name: String, proceed: @escaping () -> Void, pairAgain: @escaping () -> Void) {
+        guard !RemoteKeychain.noticeHidden, RemoteKeychain.peek("source:" + name) == .needsPassword else { return proceed() }
+        keychainNotice = KeychainNotice(name: name, proceed: proceed, pairAgain: pairAgain)
+    }
 
     func start() {
         if !AXIsProcessTrusted() { requestAccessibility() }

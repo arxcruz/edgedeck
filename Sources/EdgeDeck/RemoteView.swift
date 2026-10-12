@@ -30,6 +30,8 @@ final class RemoteHost: ObservableObject {
     @Published private(set) var sourceEditing = false
     /// A text field on the Source is in use: this Mac's keyboard types into it.
     @Published private(set) var sourceTyping = false
+    /// The Source is asking its user something (a password prompt): the Edge says so.
+    @Published private(set) var waitingForSource = false
     /// A Remote view ended on its own; the reason, for a Toast.
     var onProblem: (String) -> Void = { NSLog("EdgeDeck: Remote view: \($0)") }
     /// The Dashboard size the Source should draw at.
@@ -43,6 +45,8 @@ final class RemoteHost: ObservableObject {
     private var format: CMVideoFormatDescription?
     private var lastHeard = Date()
     private var timer: Timer?
+    /// Waiting for macOS's password prompt to read the Pairing secret: no timeout meanwhile.
+    private var readingSecret = false
 
     func start() {
         let browser = NWBrowser(for: .bonjour(type: RemoteWire.serviceType, domain: nil), using: .tcp)
@@ -65,8 +69,16 @@ final class RemoteHost: ObservableObject {
         display.backgroundColor = NSColor.black.cgColor
     }
 
+    /// Runs before connecting to a Source: the app explains macOS's password prompt first when
+    /// the Pairing secret needs it (see RemoteKeychain), then calls `proceed` (or not).
+    var beforeConnect: (_ name: String, _ proceed: @escaping () -> Void) -> Void = { $1() }
+
     /// Shows `name`'s Dashboard on the Edge, Pairing first if needed.
     func show(_ name: String) {
+        beforeConnect(name) { [weak self] in self?.connect(name) }
+    }
+
+    private func connect(_ name: String) {
         end()
         let channel = RemoteChannel(NWConnection(to: .service(name: name, type: RemoteWire.serviceType, domain: "local.", interface: nil), using: RemoteWire.parameters))
         self.channel = channel
@@ -81,11 +93,10 @@ final class RemoteHost: ObservableObject {
             self.lose(self.pairingCode != nil ? "Wrong code, or Pairing was cancelled on \(name)" : "\(name) went away")
         }
         channel.start()
-        let secret = RemoteKeychain.secret(for: "source:" + name)
         var hello = Data([RemoteWire.version])
         hello.append(withUnsafeBytes(of: RemoteWire.localID.uuid) { Data($0) })
         hello.append(salt)
-        hello.append(secret == nil ? 0 : 1)
+        hello.append(RemoteKeychain.has("source:" + name) ? 1 : 0)
         hello.append(UInt16(dashboardSize.width).bigEndianData)
         hello.append(UInt16(dashboardSize.height).bigEndianData)
         hello.append(Data(RemoteWire.localName.utf8))
@@ -107,6 +118,8 @@ final class RemoteHost: ObservableObject {
         if sourceEditing { sourceEditing = false }
         if sourceTyping { sourceTyping = false }
         if current != nil { current = nil }
+        readingSecret = false
+        if waitingForSource { waitingForSource = false }
     }
 
     func sendTouch(_ phase: RemoteWire.TouchPhase, at point: CGPoint, clickCount: Int) {
@@ -142,8 +155,10 @@ final class RemoteHost: ObservableObject {
         if streaming {
             channel?.send(.ping)
             if Date().timeIntervalSince(lastHeard) > 2, let name = current { lose("\(name) went away") }
-        } else if Date().timeIntervalSince(lastHeard) > (pairingCode != nil ? 120 : 5), let name = current {
-            lose(pairingCode != nil ? "Pairing with \(name) timed out" : "Couldn't reach \(name)")
+        } else if !readingSecret, Date().timeIntervalSince(lastHeard) > (pairingCode != nil || waitingForSource ? 120 : 5), let name = current {
+            lose(pairingCode != nil ? "Pairing with \(name) timed out"
+                 : waitingForSource ? "\(name) is still asking for a password: answer it there, then choose \(name) again"
+                 : "Couldn't reach \(name): is EdgeDeck running there? If it's asking for a password or a code, answer it and try again")
         }
     }
 
@@ -155,6 +170,7 @@ final class RemoteHost: ObservableObject {
     private func received(_ kind: RemoteWire.Kind, _ payload: Data) {
         guard let channel, let name = current else { return }
         lastHeard = Date()
+        if kind != .ping, waitingForSource != (kind == .waiting) { waitingForSource = kind == .waiting }
         switch kind {
         case .hello:
             guard payload.count >= 18, payload[payload.startIndex] == RemoteWire.version,
@@ -162,8 +178,18 @@ final class RemoteHost: ObservableObject {
                 return lose("\(name) runs a different EdgeDeck version: update both Macs")
             }
             let sourceSalt = payload.subdata(in: payload.startIndex + 2 ..< payload.startIndex + 18)
-            if status == .paired, let secret = RemoteKeychain.secret(for: "source:" + name) {
-                beginStreaming(secret: secret, sourceSalt: sourceSalt)
+            if status == .paired {
+                // May show macOS's password prompt; the connection keeps going meanwhile.
+                readingSecret = true
+                RemoteKeychain.read("source:" + name) { [weak self, weak channel] secret in
+                    guard let self, let channel, self.channel === channel else { return }
+                    self.readingSecret = false
+                    self.lastHeard = Date()
+                    if let secret { return self.beginStreaming(secret: secret, sourceSalt: sourceSalt) }
+                    // Refused: the Source already sealed with the old secret, so start over with a code.
+                    RemoteKeychain.forget("source:" + name)
+                    self.lose("EdgeDeck couldn't use its Pairing with \(name): choose it again to Pair again")
+                }
             } else {
                 // Pairing: the user types this code on the Source.
                 let code = String(format: "%06d", Int.random(in: 0..<1_000_000))
@@ -183,6 +209,8 @@ final class RemoteHost: ObservableObject {
             format = Self.formatDescription(payload)
         case .frame:
             if let format, let sample = Self.sampleBuffer(payload, format: format) { enqueue(sample) }
+        case .problem:
+            lose(String(decoding: payload, as: UTF8.self))
         case .state:
             sourceEditing = payload.first == 1
             sourceTyping = payload.count >= 2 && payload[payload.startIndex + 1] == 1
@@ -335,6 +363,13 @@ private struct RemoteOverlay: View {
             }
         } else if host.current != nil {
             ZStack {
+                if host.waitingForSource, let name = host.current {
+                    Label("Waiting for you on \(name): answer the password prompt there", systemImage: "key.fill")
+                        .font(.system(size: 22, weight: .bold, design: .rounded))
+                        .foregroundStyle(.white)
+                        .padding(.horizontal, 28).frame(height: 64)
+                        .background(Theme.tileRaised, in: Capsule())
+                }
                 if !host.sourceEditing {
                     SourcePill().frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomTrailing)
                 }
@@ -353,6 +388,9 @@ final class RemoteSource: ObservableObject {
     var onWatch: (CGSize?) -> NSWindow? = { _ in nil }
     /// A Host wants to Pair: ask for the code shown on its Edge (nil = cancelled).
     var onPairRequest: (_ hostName: String, _ answer: @escaping (String?) -> Void) -> Void = { $1(nil) }
+    /// Before reading a Pairing secret: the app may explain macOS's password prompt and offer to
+    /// Pair again instead (`answer(true)`).
+    var beforeReading: (_ hostName: String, _ answer: @escaping (_ pairAgain: Bool) -> Void) -> Void = { $1(false) }
 
     private var listener: NWListener?
     private var channel: RemoteChannel?
@@ -432,17 +470,19 @@ final class RemoteSource: ObservableObject {
             let hostHasSecret = payload[payload.startIndex + 33] == 1
             size = CGSize(width: Int(payload.readInteger(at: 34, as: UInt16.self)), height: Int(payload.readInteger(at: 36, as: UInt16.self)))
             let hostName = String(decoding: payload.dropFirst(38), as: UTF8.self)
-            if hostHasSecret, let secret = RemoteKeychain.secret(for: "host:" + hostID) {
-                channel.send(.hello, Data([RemoteWire.version, RemoteWire.HelloStatus.paired.rawValue]) + salt)
-                seal(with: secret)
-            } else {
-                channel.send(.hello, Data([RemoteWire.version, RemoteWire.HelloStatus.needsCode.rawValue]) + salt)
-                onPairRequest(hostName) { [weak self, weak channel] code in
+            let account = "host:" + hostID
+            guard hostHasSecret, RemoteKeychain.has(account) else { return askForCode(hostName) }
+            // Keep the Host waiting (pings) while the user reads the explanation or macOS's prompt.
+            keepAlive()
+            RemoteKeychain.explainFirst(account, hostName, beforeReading) { [weak self, weak channel] pairAgain in
+                guard let self, let channel, self.channel === channel else { return }
+                if pairAgain { RemoteKeychain.forget(account) }
+                RemoteKeychain.read(account) { [weak self, weak channel] secret in
                     guard let self, let channel, self.channel === channel else { return }
-                    guard let code else { return self.stop() }
-                    let keys = RemoteChannel.keys(from: RemoteChannel.codeKey(code), hostSalt: self.hostSalt, sourceSalt: self.salt)
-                    channel.seal(outgoing: keys.sourceToHost, incoming: keys.hostToSource)
-                    channel.send(.codeTyped)
+                    self.stopKeepAlive()
+                    guard let secret else { return self.askForCode(hostName) }
+                    channel.send(.hello, Data([RemoteWire.version, RemoteWire.HelloStatus.paired.rawValue]) + self.salt)
+                    self.seal(with: secret)
                 }
             }
         case .secret:
@@ -465,6 +505,34 @@ final class RemoteSource: ObservableObject {
         }
     }
 
+    /// Not Paired (or the old Pairing can't be used): the Host shows a code, this Mac asks for it.
+    private func askForCode(_ hostName: String) {
+        guard let channel else { return }
+        stopKeepAlive()
+        channel.send(.hello, Data([RemoteWire.version, RemoteWire.HelloStatus.needsCode.rawValue]) + salt)
+        onPairRequest(hostName) { [weak self, weak channel] code in
+            guard let self, let channel, self.channel === channel else { return }
+            guard let code else { return self.stop() }
+            let keys = RemoteChannel.keys(from: RemoteChannel.codeKey(code), hostSalt: self.hostSalt, sourceSalt: self.salt)
+            channel.seal(outgoing: keys.sourceToHost, incoming: keys.hostToSource)
+            channel.send(.codeTyped)
+        }
+    }
+
+    private var keepAliveTimer: Timer?
+
+    private func keepAlive() {
+        keepAliveTimer?.invalidate()
+        let timer = Timer(timeInterval: 0.5, repeats: true) { [weak self] _ in self?.channel?.send(.waiting) }
+        RunLoop.main.add(timer, forMode: .common)
+        keepAliveTimer = timer
+    }
+
+    private func stopKeepAlive() {
+        keepAliveTimer?.invalidate()
+        keepAliveTimer = nil
+    }
+
     private func seal(with secret: SymmetricKey) {
         let keys = RemoteChannel.keys(from: secret, hostSalt: hostSalt, sourceSalt: salt)
         channel?.seal(outgoing: keys.sourceToHost, incoming: keys.hostToSource)
@@ -472,6 +540,14 @@ final class RemoteSource: ObservableObject {
 
     private func beginStreaming() {
         guard window == nil else { return }
+        // Streaming records this Mac's Dashboard window. Without the permission the capture fails,
+        // so say why instead of just hanging up (and let macOS list or ask for it).
+        guard CGPreflightScreenCaptureAccess() else {
+            CGRequestScreenCaptureAccess()
+            channel?.send(.problem, Data("\(RemoteWire.localName) needs the Screen & System Audio Recording permission for EdgeDeck: allow it there (System Settings → Privacy & Security), restart EdgeDeck there, then choose it again".utf8))
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { [weak self] in self?.stop() }
+            return
+        }
         guard let window = onWatch(size) else { return stop() }
         self.window = window
         isWatched = true
@@ -495,6 +571,7 @@ final class RemoteSource: ObservableObject {
     private func stop() {
         timer?.invalidate()
         timer = nil
+        stopKeepAlive()
         let channel = self.channel
         self.channel = nil
         channel?.close()
@@ -717,6 +794,22 @@ struct SourceChooser: View {
                     ForEach(host.sources, id: \.self) { name in
                         choice(name, symbol: "display.2", selected: host.current == name) { host.show(name) }
                     }
+                }
+                if !host.sources.isEmpty {
+                    // What the first connection (and the first after an update) asks for, on which Mac.
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text("The first time, and after updating EdgeDeck:")
+                            .font(.system(size: 15, weight: .bold, design: .rounded))
+                        Label("Both Macs may ask for their password to use the Pairing: type it and choose Always Allow. Each Mac asks on its own screen.",
+                              systemImage: "key.fill")
+                        Label("The Mac whose Dashboard you show needs Screen & System Audio Recording for EdgeDeck (System Settings → Privacy & Security).",
+                              systemImage: "rectangle.dashed.badge.record")
+                    }
+                    .font(.system(size: 14, weight: .medium, design: .rounded))
+                    .foregroundStyle(Theme.secondaryText)
+                    .frame(maxWidth: 860, alignment: .leading)
+                    .padding(16)
+                    .background(Theme.tileRaised.opacity(0.9), in: RoundedRectangle(cornerRadius: 16, style: .continuous))
                 }
             }
         }
