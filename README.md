@@ -26,7 +26,7 @@ EdgeDeck asks macOS for these in System Settings → Privacy & Security:
 | Permission | Needed for | When |
 | --- | --- | --- |
 | **Accessibility** (called **Device Control and Data Access** on macOS 27) | Reading notifications, moving windows, key presses, and touch | Always |
-| **Input Monitoring** | Touch, on some older macOS versions | Only if macOS asks; macOS 27 doesn't need it |
+| **Input Monitoring** | Touch, possibly on macOS 15 and earlier | Only if macOS asks; macOS 26 and 27 don't need it |
 | **Calendar** | The Calendar Widget | If you use it |
 | **Automation** (Music, and any app your AppleScript Buttons control) | The Music Widget and AppleScript Buttons | If you use them |
 | **Local Network** | [Remote view](#another-macs-dashboard-remote-view) between your Macs | If you use it |
