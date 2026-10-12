@@ -43,4 +43,8 @@ jobs:
         if: github.ref_type == 'tag'
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh release create "$GITHUB_REF_NAME" "build/EdgeDeck-$VERSION.dmg" --title "EdgeDeck $VERSION" --generate-notes
+        # The notes are the version's section of CHANGELOG.md, or GitHub's list of changes if it has none.
+        run: |
+          ./scripts/release-notes.sh "$VERSION" > notes.md
+          if [[ -s notes.md ]]; then notes=(--notes-file notes.md); else notes=(--generate-notes); fi
+          gh release create "$GITHUB_REF_NAME" "build/EdgeDeck-$VERSION.dmg" --title "EdgeDeck $VERSION" "${notes[@]}"

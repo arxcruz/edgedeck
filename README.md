@@ -141,7 +141,8 @@ Toast when a Session needs you, Show cost.
 ## Download
 
 Get `EdgeDeck-<version>.dmg` from the [Releases](https://github.com/arxcruz/edgedeck/releases)
-page, open it and drag **EdgeDeck** to **Applications**. It runs on macOS 14 or later,
+page, open it and drag **EdgeDeck** to **Applications**. What changed in each version is in
+the [changelog](CHANGELOG.md). It runs on macOS 14 or later,
 on Apple silicon and Intel Macs.
 
 The release is **not notarized**. It's built by GitHub Actions and ad-hoc signed, with no
@@ -171,9 +172,9 @@ Because the signature changes with every release, macOS also forgets EdgeDeck's
 Accessibility and Input Monitoring permissions after each update; see
 [Permissions](#permissions) for how to grant them again.
 
-To make a release, push a tag such as `v0.2.0`: the
-[Release workflow](.github/workflows/release.yml) builds the DMG
-(`scripts/make-dmg.sh`) and attaches it to a GitHub Release. Running the workflow by
+To make a release, add a `## <version>` section to [CHANGELOG.md](CHANGELOG.md), then push
+a tag such as `v0.2.0`: the [Release workflow](.github/workflows/release.yml) builds the DMG
+(`scripts/make-dmg.sh`) and attaches it to a GitHub Release, with that section as its notes. Running the workflow by
 hand only uploads the DMG as a build artifact.
 
 ## Build & run
