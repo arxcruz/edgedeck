@@ -16,6 +16,9 @@ import Security
 
 enum RemoteWire {
     static let serviceType = "_edgedeck._tcp"
+    /// The keyboard link (KeyboardGrab.swift): separate from Remote view, so grabbing a keyboard
+    /// never ends a Remote view. Same hello, Pairing secrets and sealing.
+    static let keyboardServiceType = "_edgedeck-kbd._tcp"
     static let version: UInt8 = 2
 
     enum Kind: UInt8 {
@@ -40,8 +43,27 @@ enum RemoteWire {
         /// the Edit toolbar); typing (a text field is in use) makes the Host forward its keyboard.
         case state
         /// Host → Source: one key event, `[type][key code: 2][modifiers: 4][repeat]` then the
-        /// characters and the characters ignoring modifiers, each `[length: 2][UTF-8]`.
+        /// characters and the characters ignoring modifiers, each `[length: 2][UTF-8]`. On the
+        /// keyboard link it goes the other way (the grabbed Mac's keys), with empty characters.
         case key
+        /// Keyboard link, Host → Paired Mac, sealed: Grab the keyboard.
+        case grab
+        /// Keyboard link, Host → Paired Mac: Release it.
+        case release
+        /// Keyboard link, Paired Mac → Host: `[status]`, see `LendStatus`.
+        case lending
+    }
+
+    enum LendStatus: UInt8 {
+        case lent = 0
+        /// A password field is in use on the Paired Mac: macOS hides its keys from every app.
+        case paused
+        case locked
+        case notAllowed
+        /// EdgeDeck there can't watch the keyboard (no Accessibility permission).
+        case noPermission
+        /// The user pressed the Take Back Keyboard shortcut there.
+        case takenBack
     }
 
     enum KeyType: UInt8 { case down, up, flagsChanged }
@@ -208,6 +230,16 @@ enum RemoteKeychain {
         var result: AnyObject?
         guard SecItemCopyMatching(query as CFDictionary, &result) == errSecSuccess, let data = result as? Data else { return nil }
         return SymmetricKey(data: data)
+    }
+
+    /// Whether a secret is stored, without reading it: no Keychain prompt, even for a new build
+    /// (reading one saved by a differently signed build asks the user).
+    static func has(_ account: String) -> Bool {
+        let query: [CFString: Any] = [kSecClass: kSecClassGenericPassword, kSecAttrService: service,
+                                      kSecAttrAccount: account, kSecReturnAttributes: true,
+                                      kSecUseAuthenticationUI: kSecUseAuthenticationUISkip]
+        var result: AnyObject?
+        return SecItemCopyMatching(query as CFDictionary, &result) == errSecSuccess
     }
 
     static func store(_ secret: SymmetricKey, for account: String) {

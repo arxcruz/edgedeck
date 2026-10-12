@@ -27,6 +27,7 @@
 	<key>NSBonjourServices</key>
 	<array>
 		<string>_edgedeck._tcp</string>
+		<string>_edgedeck-kbd._tcp</string>
 	</array>
 	<key>NSCalendarsFullAccessUsageDescription</key>
 	<string>EdgeDeck shows your upcoming events on the Xeneon Edge.</string>

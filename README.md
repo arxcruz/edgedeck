@@ -50,6 +50,11 @@ Things that trip people up:
   tccutil reset ListenEvent com.arxcruz.edgedeck
   ```
 
+- **After an update, macOS may ask for your password** because "EdgeDeck wants to use
+  your confidential information stored in EdgeDeck Remote view" in your keychain. That's
+  EdgeDeck reading its own Pairing secret for another Mac (Remote view, Grab the keyboard),
+  saved by the previous version; click **Always Allow**. Like the permissions above, it's
+  asked again after each update because the signature changes.
 - The prompts and System Settings open on your main display, not on the Edge.
 
 ## About this project
@@ -266,6 +271,28 @@ Mac the Edge is plugged into is the **Host**; the Mac whose Dashboard is showing
   Edge, opening a Notification, or turning on Plain display goes back to this Mac's
   Dashboard, as does the Source going away (a message says so). EdgeDeck always
   starts on this Mac's Dashboard.
+
+### Grab the keyboard
+
+When the Edge is plugged into one Mac but your keyboard is on the other (say a KVM only
+splits USB when each Mac has its own monitor), the Mac with the Edge can **grab the other
+Mac's keyboard** while an app is on the Edge:
+
+- Bring an app to the Edge. If another Mac running EdgeDeck is nearby **and Paired with
+  this one as its Source**, the strip beside the app shows **Grab keyboard**. Pairing is
+  per direction: if the button doesn't appear, Pair once from this Mac's Edge (the pill at
+  the bottom right → choose the other Mac → type the code there).
+- Tap it: the app comes to the front and everything typed on the other Mac's keyboard
+  (⌘-shortcuts too) goes to it. The other Mac shows "Typing on …" at the top of its main
+  screen and a keyboard icon in its menu bar; its mouse stays its own.
+- **Release keyboard**, sending the app back, or another app replacing it gives the
+  keyboard back. So does the other Mac on its own: its **Take Back Keyboard** shortcut
+  (⌃⌥⌘K unless you change it), its menu bar (Keyboard → Take Back Keyboard), or losing
+  touch with this Mac for two seconds.
+- On the other Mac, the menu bar's **Keyboard** submenu changes the shortcut (Record) and
+  can stop Paired Macs from grabbing the keyboard at all. It needs EdgeDeck's
+  Accessibility permission there; while a password field is active on it, macOS hides the
+  keys from every app and the strip says **Keyboard paused**.
 
 `EDGEDECK_REMOTE_STATS=1` on the Source logs frames per second, encoding time and bit
 rate. `EDGEDECK_REMOTE_NAME=<name>` renames a Mac on the network (for running a second

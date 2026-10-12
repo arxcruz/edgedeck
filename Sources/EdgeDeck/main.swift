@@ -54,6 +54,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
     private var previewItem: NSMenuItem!
     private var loginItem: NSMenuItem!
     private var touchItem: NSMenuItem!
+    private var keyboardItem: NSMenuItem!
+    /// On the main screen while this Mac's keyboard types on another Mac.
+    private var keyboardLabel: NSPanel?
     private var plainItem: NSMenuItem!
     /// On a Plain display: the pull-tab hint at the right edge, shown for a few seconds.
     private var pullTab: EdgePanel!
@@ -142,6 +145,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
         }
 
         setUpStatusItem()
+        setUpKeyboardLabel()
         // Before the first placePanel: starting on a Plain display shows the pull tab at once.
         setUpPlainDisplayPanels()
         placePanel()
@@ -341,6 +345,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
         touchItem.submenu = NSMenu()
         touchItem.submenu?.delegate = self
         menu.addItem(touchItem)
+        keyboardItem = NSMenuItem(title: "Keyboard", action: nil, keyEquivalent: "")
+        keyboardItem.submenu = NSMenu()
+        keyboardItem.submenu?.delegate = self
+        menu.addItem(keyboardItem)
         menu.addItem(.separator())
         loginItem = NSMenuItem(title: "Open at Login", action: #selector(toggleOpenAtLogin), keyEquivalent: "")
         menu.addItem(loginItem)
@@ -358,8 +366,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
     private func updateStatusItem() {
         guard let statusItem else { return }
         let connected = model.edgeConnected
-        statusItem.button?.image = NSImage(systemSymbolName: connected ? "rectangle.split.3x1" : "rectangle.dashed",
-                                           accessibilityDescription: connected ? "EdgeDeck" : "EdgeDeck: waiting for the Edge")
+        if let name = model.keyboardLender.lentTo {
+            statusItem.button?.image = NSImage(systemSymbolName: "keyboard.fill", accessibilityDescription: "EdgeDeck: keyboard typing on \(name)")
+        } else {
+            statusItem.button?.image = NSImage(systemSymbolName: connected ? "rectangle.split.3x1" : "rectangle.dashed",
+                                               accessibilityDescription: connected ? "EdgeDeck" : "EdgeDeck: waiting for the Edge")
+        }
         waitingItem.isHidden = connected
         previewItem.isHidden = connected
         previewItem.state = previewWindow != nil ? .on : .off
@@ -371,6 +383,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
             fillTouchMenu(menu)
         } else if menu === remoteItem.submenu {
             fillRemoteMenu(menu)
+        } else if menu === keyboardItem.submenu {
+            fillKeyboardMenu(menu)
         } else {
             // Shows the last known Open at Login state at once and checks again in the background.
             refreshLoginItem()
@@ -445,6 +459,70 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
         let ok = alert.runModal() == .alertFirstButtonReturn
         let code = field.stringValue.filter(\.isNumber)
         answer(ok && code.count == 6 ? code : nil)
+    }
+
+    // MARK: Keyboard
+
+    /// Lending this Mac's keyboard to a Host that grabbed it (see KeyboardGrab.swift).
+    private func fillKeyboardMenu(_ menu: NSMenu) {
+        let lender = model.keyboardLender
+        menu.removeAllItems()
+        menu.autoenablesItems = false
+        let status = MenuAction(lender.lentTo.map { "Typing on \($0)" } ?? "This keyboard types here") {}
+        status.isEnabled = false
+        menu.addItem(status)
+        let takeBack = MenuAction("Take Back Keyboard (\(lender.shortcut.description))") { lender.takeBack() }
+        takeBack.isEnabled = lender.lentTo != nil
+        menu.addItem(takeBack)
+        menu.addItem(.separator())
+        menu.addItem(MenuAction("Take Back Keyboard Shortcut: \(lender.shortcut.description)…") { [weak self] in self?.recordTakeBackShortcut() })
+        menu.addItem(MenuAction("Allow Paired Macs to Grab the Keyboard", checked: lender.allowed) { lender.allowed.toggle() })
+    }
+
+    /// Asks for a new Take Back Keyboard shortcut: the next key pressed with ⌘, ⌥ or ⌃.
+    private func recordTakeBackShortcut() {
+        let lender = model.keyboardLender
+        let alert = NSAlert()
+        alert.messageText = "Press the new Take Back Keyboard shortcut"
+        alert.informativeText = "Hold ⌘, ⌥ or ⌃ and press a key. It always gives this Mac its keyboard back while another Mac has grabbed it. Now: \(lender.shortcut.description)"
+        alert.addButton(withTitle: "Cancel")
+        alert.addButton(withTitle: "Use \(KeyShortcut.standard.description)")
+        let monitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
+            guard let shortcut = KeyShortcut(event: event) else { return event }
+            lender.shortcut = shortcut
+            NSApp.stopModal(withCode: .alertThirdButtonReturn)
+            return nil
+        }
+        NSApp.activate()
+        let answer = alert.runModal()
+        if let monitor { NSEvent.removeMonitor(monitor) }
+        if answer == .alertSecondButtonReturn { lender.shortcut = .standard }
+    }
+
+    private func setUpKeyboardLabel() {
+        let panel = NSPanel(contentRect: NSRect(x: 0, y: 0, width: 640, height: 56), styleMask: [.borderless, .nonactivatingPanel],
+                            backing: .buffered, defer: false)
+        panel.level = .statusBar
+        panel.isOpaque = false
+        panel.backgroundColor = .clear
+        panel.hasShadow = false
+        panel.ignoresMouseEvents = true
+        panel.collectionBehavior = [.canJoinAllSpaces, .stationary, .fullScreenAuxiliary, .ignoresCycle]
+        panel.contentView = NSHostingView(rootView: KeyboardLentLabel(lender: model.keyboardLender))
+        keyboardLabel = panel
+        model.keyboardLender.$lentTo
+            .removeDuplicates()
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] name in
+                guard let self, let panel = self.keyboardLabel else { return }
+                self.updateStatusItem()
+                guard name != nil, let screen = NSScreen.screens.first else { return panel.orderOut(nil) }
+                // Top centre of the main screen, just under the menu bar.
+                let frame = screen.visibleFrame
+                panel.setFrameOrigin(NSPoint(x: frame.midX - panel.frame.width / 2, y: frame.maxY - panel.frame.height - 8))
+                panel.orderFrontRegardless()
+            }
+            .store(in: &cancellables)
     }
 
     // MARK: Touch

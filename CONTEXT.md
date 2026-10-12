@@ -218,6 +218,10 @@ _Avoid_: AirPlay, mirroring, streaming mode, remote mode
 Introducing two Macs to each other once, with a code shown on the Edge, so they can later switch Sources securely.
 _Avoid_: Link, trust, connect (Connect is for Profiles)
 
+**Grab the keyboard**:
+The Host, at the user's request from the Rail, makes a Paired Mac's keyboard type only on the Host, so a Guest app on the Edge can be typed into while the user sits at the other Mac. Its reverse is **Release**, which also happens on its own when the Guest app goes, when the link between the Macs goes quiet, or with the other Mac's **Take Back Keyboard** shortcut.
+_Avoid_: Lend, capture, share the keyboard, keyboard forwarding
+
 ## Relationships
 
 - The **Dashboard** has **Page dots** and one or more **Pages**; each **Page** has zero or more **Widgets**, each with exactly one **Widget kind** and one **Frame**.
@@ -225,3 +229,4 @@ _Avoid_: Link, trust, connect (Connect is for Profiles)
 - A **Launcher** has many **Buttons**; each **Button** has one **Action**.
 - An **Agent tool** has one or more **Profiles**; a **Profile** has zero or more **Sessions**.
 - The **Edge** has one **Host** and shows one **Source** at a time; when they differ, it is a **Remote view**. Only **Paired** Macs can be a **Source** for each other.
+- The **Host** can **Grab the keyboard** of one **Paired** Mac at a time, only while a **Guest app** is on the Edge.

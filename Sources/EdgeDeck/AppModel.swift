@@ -19,6 +19,9 @@ final class AppModel: ObservableObject {
     let swipe = SwipeState()
     let remoteHost = RemoteHost()
     let remoteSource = RemoteSource()
+    /// Grabbing another Mac's keyboard for the Guest app, and lending this Mac's.
+    let keyboard = KeyboardGrabber()
+    let keyboardLender = KeyboardLender()
 
     /// Whether the Xeneon Edge is plugged in; set by the app delegate.
     @Published var edgeConnected = true
@@ -90,6 +93,15 @@ final class AppModel: ObservableObject {
             .store(in: &cancellables)
 
         remoteHost.onProblem = { [weak self] text in self?.flashPlayerMessage(text) }
+        keyboard.onProblem = { [weak self] text in self?.flashPlayerMessage(text) }
+        keyboard.onGrabbed = { [weak self] in self?.guest.activate() }
+        // A grabbed keyboard belongs to one Guest app: released when it goes or another replaces it.
+        guest.$current
+            .map { $0?.pid }
+            .removeDuplicates()
+            .dropFirst()
+            .sink { [weak self] _ in self?.keyboard.release() }
+            .store(in: &cancellables)
         $editing
             .sink { [weak self] editing in self?.remoteSource.editing = editing }
             .store(in: &cancellables)
@@ -107,7 +119,7 @@ final class AppModel: ObservableObject {
         }
 
         // Forward nested changes so views observing the model refresh.
-        for publisher in [configStore.objectWillChange, touch.objectWillChange, notifications.objectWillChange, guest.objectWillChange, player.objectWillChange, ai.objectWillChange, remoteHost.objectWillChange, remoteSource.objectWillChange] {
+        for publisher in [configStore.objectWillChange, touch.objectWillChange, notifications.objectWillChange, guest.objectWillChange, player.objectWillChange, ai.objectWillChange, remoteHost.objectWillChange, remoteSource.objectWillChange, keyboard.objectWillChange] {
             publisher.sink { [weak self] _ in self?.objectWillChange.send() }.store(in: &cancellables)
         }
 
@@ -132,6 +144,8 @@ final class AppModel: ObservableObject {
         touch.start()
         remoteHost.start()
         remoteSource.start()
+        keyboard.start()
+        keyboardLender.start()
     }
 
     func requestAccessibility() {

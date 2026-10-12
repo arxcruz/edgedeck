@@ -335,6 +335,7 @@ struct Rail: View {
                     RailButton(title: "Activate", symbol: "hand.tap") { model.guest.activate() }
                 }
                 RailButton(title: "Send back", symbol: "arrow.uturn.backward") { model.guest.sendBack() }
+                keyboardButtons
             } else if model.player.isOpen {
                 AppIcon(image: model.player.source?.icon, size: 52).padding(.top, 8)
                 Text(model.player.title)
@@ -365,6 +366,26 @@ struct Rail: View {
         .padding(10)
         .frame(maxHeight: .infinity)
         .background(Theme.tile)
+    }
+}
+
+extension Rail {
+    /// Grab keyboard: type into the Guest app with another Mac's keyboard (only Paired Macs
+    /// running EdgeDeck nearby). With several, each button names its Mac.
+    @ViewBuilder
+    var keyboardButtons: some View {
+        let keyboard = model.keyboard
+        if let name = keyboard.grabbed {
+            RailButton(title: keyboard.paused ? "Keyboard paused" : "Release keyboard", symbol: "keyboard.chevron.compact.down",
+                       tint: Color(hex: keyboard.paused ? "#FF9F0A" : "#0A84FF")) { keyboard.release() }
+                .accessibilityLabel("Release \(name)'s keyboard")
+        } else {
+            ForEach(keyboard.lenders, id: \.self) { name in
+                RailButton(title: keyboard.lenders.count > 1 ? "Grab \(name)'s keyboard" : "Grab keyboard", symbol: "keyboard") {
+                    keyboard.grab(name)
+                }
+            }
+        }
     }
 }
 
