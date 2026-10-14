@@ -811,6 +811,10 @@ final class AIModel: ObservableObject {
                 // Claude's own "idle" written after our last event wins (e.g. Esc pressed).
                 if base == .idle, statusAt.timeIntervalSince(event.time) > 2 {
                     state = .idle
+                } else if base == .idle, Self.midTurnEvents.contains(event.name) {
+                    // The bridge stamps events when it runs, and hooks run in parallel, so a
+                    // PostToolUse can land after the turn's Stop. Claude says idle: it's stale.
+                    state = .idle
                 } else if let fromHook {
                     state = fromHook
                 }
@@ -822,6 +826,10 @@ final class AIModel: ObservableObject {
                                 contextPercent: contextBySession[sessionID], cost: costBySession[sessionID])
         }
     }
+
+    /// Hook events that only happen while Claude is busy; once Claude reports idle they can't be current.
+    private static let midTurnEvents: Set<String> = ["PreToolUse", "PostToolUse", "PostToolUseFailure",
+                                                     "SubagentStart", "SubagentStop", "PreCompact"]
 
     private static func state(for event: HookEvent) -> AgentState? {
         switch event.name {
