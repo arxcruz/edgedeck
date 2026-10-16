@@ -3,7 +3,7 @@
 What changed in each EdgeDeck release. Downloads are on the
 [Releases](https://github.com/arxcruz/edgedeck/releases) page.
 
-## Unreleased
+## 0.2.0 — 2026-10-16
 
 - **Fix:** the **App Windows** and **Mission Control** Controls, and any Button that sends an arrow
   key with a modifier, now work the way the real keys do.
@@ -19,6 +19,8 @@ What changed in each EdgeDeck release. Downloads are on the
   by tapping the time, and take Rounds of Work and Break. When one runs out it rings: the
   widget pulses, a sound plays and a Toast says which (a button on the Rail during a
   Takeover). Countdowns keep going across restarts and sleep.
+- **Lower idle CPU:** the AI agents, Notifications, system stats and Dock badges are looked at
+  less often, and only while a widget that needs them is on the Page.
 
 ## 0.1.3 — 2026-10-12
 
