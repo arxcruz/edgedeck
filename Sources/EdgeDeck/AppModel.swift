@@ -170,6 +170,7 @@ final class AppModel: ObservableObject {
         }
         stats.start()
         notifications.start()
+        runningApps.isNeeded = { [weak self] in self?.currentPage.widgets.contains { $0.kind == .runningApps } ?? true }
         runningApps.start()
         nowPlaying.start()
         weather.start()
