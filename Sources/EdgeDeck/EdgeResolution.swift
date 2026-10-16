@@ -14,7 +14,6 @@ final class EdgeResolution {
     @discardableResult
     func check(_ display: CGDirectDisplayID, manual: Bool = false) -> Outcome {
         if manual { attempts.reset() }
-        let modes = Self.modes(of: display)
         guard let current = CGDisplayCopyDisplayMode(display) else { return .couldNotFix }
         if NativeMode.isNative(Self.info(current)) {
             stuck = false
@@ -25,11 +24,22 @@ final class EdgeResolution {
             stuck = true
             return .gaveUp
         }
-        guard let index = NativeMode.pick(from: modes.map(Self.info)), apply(modes[index], to: display) else {
+        guard restoreNative(on: display) else {
             stuck = true
             return .couldNotFix
         }
         return .fixed
+    }
+
+    /// The private mode list first, since only it has the Edge's 2560×720; the public one if that's unavailable.
+    private func restoreNative(on display: CGDirectDisplayID) -> Bool {
+        let hidden = PrivateDisplayModes.modes(of: display)
+        if let index = NativeMode.pick(from: hidden.map(\.info)) {
+            return PrivateDisplayModes.apply(hidden[index], to: display)
+        }
+        let modes = Self.modes(of: display)
+        guard let index = NativeMode.pick(from: modes.map(Self.info)) else { return false }
+        return apply(modes[index], to: display)
     }
 
     private func apply(_ mode: CGDisplayMode, to display: CGDirectDisplayID) -> Bool {
