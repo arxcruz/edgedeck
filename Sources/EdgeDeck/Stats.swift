@@ -5,7 +5,10 @@ import IOKit
 /// Samples system metrics once per second. All readings come from public
 /// kernel/IOKit counters, so no elevated privileges are needed.
 final class StatsSampler: ObservableObject {
-    static let historyLength = 60
+    /// Seconds between samples; every sample redraws each stat widget, so this sets their CPU cost.
+    static let interval: TimeInterval = 2
+    /// Samples kept: the graphs still span a minute.
+    static let historyLength = 30
 
     @Published var cpu: Double = 0
     @Published var cpuCores: [Double] = []
@@ -37,7 +40,7 @@ final class StatsSampler: ObservableObject {
 
     func start() {
         sample()
-        timer = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] _ in self?.sample() }
+        timer = Timer.scheduledTimer(withTimeInterval: Self.interval, repeats: true) { [weak self] _ in self?.sample() }
     }
 
     /// Asked every second; sampling (and the redraws its published values cause) stops while it says no.
@@ -53,7 +56,7 @@ final class StatsSampler: ObservableObject {
         sampleMemory()
         sampleDiskIO()
         sampleNetwork()
-        if tick % 30 == 0 { sampleDiskSpace() }
+        if tick % 15 == 0 { sampleDiskSpace() }
         tick += 1
     }
 
