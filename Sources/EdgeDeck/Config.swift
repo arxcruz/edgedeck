@@ -382,6 +382,8 @@ struct NotificationSettings: Codable, Hashable {
     /// Names used before CONTEXT.md, still accepted when reading.
     private enum LegacyKeys: String, CodingKey { case dockOnTap }
     var toastSeconds: Double = 8
+    /// Seconds between looks at Notification Center while no banner is showing (0.5 at least).
+    var pollSeconds: Double = 1.5
 
     init() {}
 
@@ -394,6 +396,7 @@ struct NotificationSettings: Codable, Hashable {
         ignoreApps = try c.decodeIfPresent([String].self, forKey: .ignoreApps) ?? d.ignoreApps
         maxItems = try c.decodeIfPresent(Int.self, forKey: .maxItems) ?? d.maxItems
         toastSeconds = try c.decodeIfPresent(Double.self, forKey: .toastSeconds) ?? d.toastSeconds
+        pollSeconds = max(0.5, try c.decodeIfPresent(Double.self, forKey: .pollSeconds) ?? d.pollSeconds)
     }
 }
 
