@@ -2,7 +2,7 @@ import Darwin
 import Foundation
 import IOKit
 
-/// Samples system metrics once per second. All readings come from public
+/// Samples system metrics every `interval` seconds. All readings come from public
 /// kernel/IOKit counters, so no elevated privileges are needed.
 final class StatsSampler: ObservableObject {
     /// Seconds between samples; every sample redraws each stat widget, so this sets their CPU cost.
