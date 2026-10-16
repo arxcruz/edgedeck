@@ -476,6 +476,8 @@ final class AIModel: ObservableObject {
     var learnedProfile: (String) -> Void = { _ in }
     private var lastLearn = Date.distantPast
     private var polling = false
+    private var usageRead = Date.distantPast
+    private var cachedOpenCodeUsage: OpenCodeUsage?
     private let queue = DispatchQueue(label: "edgedeck.ai")
     /// Per profile key: last hook event per Claude session id.
     private var hookEvents: [String: [String: HookEvent]] = [:]
@@ -759,7 +761,12 @@ final class AIModel: ObservableObject {
             let openCode = OpenCodeReader(path: opencodePath)
             let asks = openCodeAsks.compactMapValues { $0.values.max { $0.time < $1.time } }
             let ocSessions = openCode?.activeSessions(servers: openCodeServers, asks: asks.mapValues(\.action)) ?? []
-            let ocUsage = openCode?.todayUsage()
+            // Today's totals change on a message, not a poll; summing the day's rows each time is wasteful.
+            if Date().timeIntervalSince(self.usageRead) > 30 {
+                self.usageRead = Date()
+                self.cachedOpenCodeUsage = openCode?.todayUsage()
+            }
+            let ocUsage = self.cachedOpenCodeUsage
             sessions += ocSessions.map { s in
                 AgentSession(id: "oc:" + s.id, tool: .opencode, profile: nil, project: s.project, title: s.title,
                              state: s.state, since: self.since("oc:" + s.id, s.state, fallback: s.updated), pid: s.pid,
@@ -999,7 +1006,11 @@ final class AIModel: ObservableObject {
         guard count > 0 else { return [] }
         var pids = [pid_t](repeating: 0, count: Int(count) * 2)
         let n = proc_listallpids(&pids, Int32(pids.count * MemoryLayout<pid_t>.size))
-        return pids.prefix(Int(n)).filter { $0 > 0 && processName($0).lowercased().contains(name) }
+        // One reused C buffer and strcasestr: a String per process, every poll, was the AI widget's main cost.
+        var buffer = [CChar](repeating: 0, count: 256)
+        return pids.prefix(Int(n)).filter { pid in
+            pid > 0 && proc_name(pid, &buffer, UInt32(buffer.count)) > 0 && strcasestr(buffer, name) != nil
+        }
     }
 }
 

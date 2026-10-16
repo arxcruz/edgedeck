@@ -164,8 +164,13 @@ final class AppModel: ObservableObject {
 
     func start() {
         if !AXIsProcessTrusted() { requestAccessibility() }
+        // Only the stat widgets read the sampler: with none on the page, don't sample or publish.
+        stats.isNeeded = { [weak self] in
+            self?.currentPage.widgets.contains { [.cpu, .gpu, .memory, .disk, .network].contains($0.kind) } ?? true
+        }
         stats.start()
         notifications.start()
+        runningApps.isNeeded = { [weak self] in self?.currentPage.widgets.contains { $0.kind == .runningApps } ?? true }
         runningApps.start()
         nowPlaying.start()
         weather.start()

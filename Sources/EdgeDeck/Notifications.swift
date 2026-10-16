@@ -33,9 +33,21 @@ final class NotificationWatcher: ObservableObject {
     private var toastTimer: Timer?
     private var primed = false
 
+    private var lastBanner = Date.distantPast
+    /// How long after a banner the poll stays quick, for a follow-up banner or a tap.
+    private static let burst: TimeInterval = 5
+
     func start() {
         poll()
-        timer = Timer.scheduledTimer(withTimeInterval: 0.5, repeats: true) { [weak self] _ in self?.poll() }
+    }
+
+    /// Every poll is a round of Accessibility calls into Notification Center, so idle polls
+    /// are slow (`pollSeconds`) and only speed up while banners are around.
+    private func schedule() {
+        let quick = !liveBanners.isEmpty || Date().timeIntervalSince(lastBanner) < Self.burst
+        let interval = quick ? min(0.5, settings.pollSeconds) : settings.pollSeconds
+        timer?.invalidate()
+        timer = Timer.scheduledTimer(withTimeInterval: interval, repeats: false) { [weak self] _ in self?.poll() }
     }
 
     func liveBanner(for notification: EdgeNotification) -> AXUIElement? {
@@ -67,6 +79,7 @@ final class NotificationWatcher: ObservableObject {
     }
 
     private func poll() {
+        defer { schedule() }
         guard AXIsProcessTrusted(),
               let center = NSRunningApplication.runningApplications(withBundleIdentifier: "com.apple.notificationcenterui").first
         else { return }
@@ -91,6 +104,7 @@ final class NotificationWatcher: ObservableObject {
             fresh.append(notification)
         }
         liveBanners = live
+        if !live.isEmpty { lastBanner = Date() }
 
         // Whatever is already on screen at launch goes into the list without a toast.
         defer { primed = true }

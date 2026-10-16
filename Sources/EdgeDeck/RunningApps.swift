@@ -48,9 +48,12 @@ final class RunningAppsModel: ObservableObject {
         if next != apps { apps = next }
     }
 
+    /// Asked before each Dock scan: badges only show in the Running Apps widget.
+    var isNeeded: () -> Bool = { true }
+
     private func refreshBadges() {
         defer { refresh() }
-        guard AXIsProcessTrusted(),
+        guard isNeeded(), AXIsProcessTrusted(),
               let dock = NSRunningApplication.runningApplications(withBundleIdentifier: "com.apple.dock").first else { return }
         var next: [String: String] = [:]
         for list in AX.children(AXUIElementCreateApplication(dock.processIdentifier)) {
