@@ -345,8 +345,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
     }
 
     private func updateResolutionItem() {
-        resolutionItem?.title = edgeResolution.stuck
-            ? "Couldn't set the Edge to 2560×720 — Try Again" : "Fix Edge Resolution"
+        // Only there when EdgeDeck has given up; otherwise the checkbox above is the whole feature.
+        resolutionItem?.isHidden = !edgeResolution.stuck
     }
 
     private func setUpStatusItem() {
@@ -368,10 +368,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
         menu.addItem(remoteItem)
         plainItem = NSMenuItem(title: "Use as Plain Display", action: #selector(togglePlainDisplay), keyEquivalent: "d")
         menu.addItem(plainItem)
-        resolutionItem = NSMenuItem(title: "Fix Edge Resolution", action: #selector(fixResolution), keyEquivalent: "")
-        menu.addItem(resolutionItem)
         keepResolutionItem = NSMenuItem(title: "Keep Edge at 2560×720", action: #selector(toggleKeepResolution), keyEquivalent: "")
         menu.addItem(keepResolutionItem)
+        resolutionItem = NSMenuItem(title: "Couldn't set the Edge to 2560×720 — Try Again", action: #selector(fixResolution), keyEquivalent: "")
+        resolutionItem.isHidden = true
+        menu.addItem(resolutionItem)
         menu.addItem(NSMenuItem(title: "Open config.json", action: #selector(openConfig), keyEquivalent: ","))
         menu.addItem(NSMenuItem(title: "Reload Config", action: #selector(reloadConfig), keyEquivalent: "r"))
         menu.addItem(NSMenuItem(title: "Send Back Guest App", action: #selector(sendBack), keyEquivalent: "u"))
