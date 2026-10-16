@@ -40,7 +40,11 @@ final class StatsSampler: ObservableObject {
         timer = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] _ in self?.sample() }
     }
 
+    /// Asked every second; sampling (and the redraws its published values cause) stops while it says no.
+    var isNeeded: () -> Bool = { true }
+
     private func sample() {
+        guard isNeeded() else { return }
         sampleCPU()
         if let g = Self.readGPU() {
             gpu = g
