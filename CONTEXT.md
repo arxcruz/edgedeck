@@ -10,6 +10,10 @@ A touch dashboard for the CORSAIR Xeneon Edge used as a second display on a Mac:
 The physical Xeneon Edge touchscreen that EdgeDeck draws on.
 _Avoid_: Second screen, touchbar, panel
 
+**Touch support**:
+EdgeDeck holding the Edge's touchscreen and turning touches into input. It comes back by itself whenever the Edge is replugged; the user never has to restart it.
+_Avoid_: Touch enabled, touch active
+
 **Dashboard**:
 Everything EdgeDeck shows on the Edge when no Takeover is active: the current Page plus the Page dots.
 _Avoid_: Panel, deck, home screen

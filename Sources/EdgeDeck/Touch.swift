@@ -116,6 +116,8 @@ final class TouchController: ObservableObject {
     private var mouseMonitor: Any?
     private var askedForInputMonitoring = false
     private var reportedEdgetap = false
+    /// Reconciles in a row that found the touchscreen missing.
+    private var attachWaits = 0
 
     /// The EdgeDeck window the current touch belongs to; nil when it goes to other apps.
     private var ownWindow: NSWindow?
@@ -173,6 +175,12 @@ final class TouchController: ObservableObject {
                 IOHIDRequestAccess(kIOHIDRequestTypeListenEvent)
             }
             return
+        }
+        // The Edge is there but its touchscreen never attached (it was replugged): start over.
+        if input.isRunning, input.attachedCount == 0 {
+            if attachWaits >= 1 { input.stop(); attachWaits = 0 } else { attachWaits += 1 }
+        } else {
+            attachWaits = 0
         }
         do {
             try input.start()
