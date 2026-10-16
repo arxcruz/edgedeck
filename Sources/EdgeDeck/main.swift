@@ -52,9 +52,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
     private var editItem: NSMenuItem!
     private var waitingItem: NSMenuItem!
     private var previewItem: NSMenuItem!
-    private var loginItem: NSMenuItem!
-    private var touchItem: NSMenuItem!
-    private var keyboardItem: NSMenuItem!
     /// On the main screen while this Mac's keyboard types on another Mac.
     private var keyboardLabel: NSPanel?
     private var plainItem: NSMenuItem!
@@ -62,8 +59,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
     private var pullTab: EdgePanel!
     private var pullTabHide: DispatchWorkItem?
     private let edgeResolution = EdgeResolution()
-    private var resolutionItem: NSMenuItem!
-    private var keepResolutionItem: NSMenuItem!
+    private let settingsContext = SettingsContext()
+    /// App-level settings in a normal window, never on the Edge unless it's the only display.
+    private var settingsWindow: NSWindow?
     /// On a Plain display: Needs-you Toasts float over whatever windows are on the Edge.
     private var toastPanel: EdgePanel!
     /// The dashboard in a window on the main display, for looking and editing while the Edge
@@ -262,7 +260,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
                 // Switching raises another display change, which places the panel again.
                 DispatchQueue.main.async { [weak self] in
                     self?.edgeResolution.check(display)
-                    self?.updateResolutionItem()
+                    self?.updateResolutionState()
                 }
             }
             if model.plainDisplay {
@@ -327,26 +325,63 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
     }
 
     func windowWillClose(_ notification: Notification) {
-        guard (notification.object as? NSWindow) === previewWindow else { return }
+        let window = notification.object as? NSWindow
+        if window === settingsWindow {
+            settingsWindow = nil
+            // The Dock icon and ⌘-Tab entry were only for the Settings window.
+            DispatchQueue.main.async { if self.settingsWindow == nil { NSApp.setActivationPolicy(.accessory) } }
+        }
+        guard window === previewWindow else { return }
         model.endTyping()
         previewWindow = nil
         updateStatusItem()
     }
 
-    @objc private func toggleKeepResolution() {
-        model.configStore.update { $0.display.fixResolution.toggle() }
-        if model.config.display.fixResolution { placePanel() }
+    // MARK: Settings
+
+    @objc private func openSettings() {
+        // An accessory app's window can't take focus properly, so EdgeDeck is a regular app while it's open.
+        NSApp.setActivationPolicy(.regular)
+        if let settingsWindow {
+            NSApp.activate()
+            settingsWindow.makeKeyAndOrderFront(nil)
+            return
+        }
+        settingsContext.tryResolutionAgain = { [weak self] in self?.fixResolution() }
+        settingsContext.keepResolutionChanged = { [weak self] in
+            guard let self, self.model.config.display.fixResolution else { return }
+            self.placePanel()
+        }
+        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 720, height: 480),
+                              styleMask: [.titled, .closable, .miniaturizable, .resizable], backing: .buffered, defer: false)
+        window.title = "EdgeDeck Settings"
+        window.isReleasedWhenClosed = false
+        window.contentView = NSHostingView(rootView: SettingsView(model: model, context: settingsContext))
+        window.delegate = self
+        // Never on the Edge, unless it's the only display.
+        let edge = targetScreen()
+        let screen = NSScreen.screens.first { $0 != edge } ?? edge ?? NSScreen.main
+        if let screen {
+            window.setFrameOrigin(NSPoint(x: screen.visibleFrame.midX - window.frame.width / 2,
+                                          y: screen.visibleFrame.midY - window.frame.height / 2))
+        } else {
+            window.center()
+        }
+        settingsWindow = window
+        NSApp.activate()
+        window.makeKeyAndOrderFront(nil)
     }
 
     @objc private func fixResolution() {
         guard let display = model.touch.display else { return }
         edgeResolution.check(display, manual: true)
-        updateResolutionItem()
+        updateResolutionState()
     }
 
-    private func updateResolutionItem() {
-        // Only there when EdgeDeck has given up; otherwise the checkbox above is the whole feature.
-        resolutionItem?.isHidden = !edgeResolution.stuck
+    /// The Settings window shows the "couldn't fix it" state only when EdgeDeck has given up.
+    private func updateResolutionState() {
+        settingsContext.resolutionStuck = edgeResolution.stuck
+        settingsContext.modeChanged()
     }
 
     private func setUpStatusItem() {
@@ -368,38 +403,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
         menu.addItem(remoteItem)
         plainItem = NSMenuItem(title: "Use as Plain Display", action: #selector(togglePlainDisplay), keyEquivalent: "d")
         menu.addItem(plainItem)
-        keepResolutionItem = NSMenuItem(title: "Keep Edge at 2560×720", action: #selector(toggleKeepResolution), keyEquivalent: "")
-        menu.addItem(keepResolutionItem)
-        resolutionItem = NSMenuItem(title: "Couldn't set the Edge to 2560×720 — Try Again", action: #selector(fixResolution), keyEquivalent: "")
-        resolutionItem.isHidden = true
-        menu.addItem(resolutionItem)
-        menu.addItem(NSMenuItem(title: "Open config.json", action: #selector(openConfig), keyEquivalent: ","))
         menu.addItem(NSMenuItem(title: "Reload Config", action: #selector(reloadConfig), keyEquivalent: "r"))
         menu.addItem(NSMenuItem(title: "Send Back Guest App", action: #selector(sendBack), keyEquivalent: "u"))
-        menu.addItem(NSMenuItem(title: "\(AppModel.accessibilityName) Settings…", action: #selector(openAccessibility), keyEquivalent: ""))
         menu.addItem(.separator())
-        touchItem = NSMenuItem(title: "Touch", action: nil, keyEquivalent: "")
-        touchItem.submenu = NSMenu()
-        touchItem.submenu?.delegate = self
-        menu.addItem(touchItem)
-        keyboardItem = NSMenuItem(title: "Keyboard", action: nil, keyEquivalent: "")
-        keyboardItem.submenu = NSMenu()
-        keyboardItem.submenu?.delegate = self
-        menu.addItem(keyboardItem)
-        menu.addItem(.separator())
-        loginItem = NSMenuItem(title: "Open at Login", action: #selector(toggleOpenAtLogin), keyEquivalent: "")
-        menu.addItem(loginItem)
+        menu.addItem(NSMenuItem(title: "Settings…", action: #selector(openSettings), keyEquivalent: ","))
         menu.addItem(.separator())
         menu.addItem(NSMenuItem(title: "Quit EdgeDeck", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q"))
         for item in menu.items where item.action != #selector(NSApplication.terminate(_:)) { item.target = self }
         statusItem.menu = menu
-        refreshLoginItem()
 
         model.$editing.sink { [weak self] editing in self?.editItem.state = editing ? .on : .off }.store(in: &cancellables)
         model.$plainDisplay.sink { [weak self] plain in self?.plainItem.state = plain ? .on : .off }.store(in: &cancellables)
-        model.configStore.$config.sink { [weak self] config in
-            self?.keepResolutionItem.state = config.display.fixResolution ? .on : .off
-        }.store(in: &cancellables)
     }
 
     /// The menu bar icon and menu say whether the Edge is connected.
@@ -417,51 +431,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
         previewItem.state = previewWindow != nil ? .on : .off
     }
 
-    /// Each submenu is filled when it opens, not every time the main menu does.
+    /// The submenu is filled when it opens, not every time the main menu does.
     func menuNeedsUpdate(_ menu: NSMenu) {
-        if menu === touchItem.submenu {
-            fillTouchMenu(menu)
-        } else if menu === remoteItem.submenu {
-            fillRemoteMenu(menu)
-        } else if menu === keyboardItem.submenu {
-            fillKeyboardMenu(menu)
-        } else {
-            // Shows the last known Open at Login state at once and checks again in the background.
-            refreshLoginItem()
-        }
-    }
-
-    /// SMAppService.status is a synchronous round trip to another process (~13 ms), so it's
-    /// never asked on the main thread while a menu is opening.
-    private func refreshLoginItem() {
-        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
-            let status = SMAppService.mainApp.status
-            DispatchQueue.main.async { self?.showLoginItem(status) }
-        }
-    }
-
-    private func showLoginItem(_ status: SMAppService.Status) {
-        // Open at Login must point at one stable copy, which scripts/build.sh installs.
-        let installed = Bundle.main.bundlePath.hasPrefix("/Applications/")
-        switch status {
-        case .enabled: loginItem.state = .on
-        case .requiresApproval: loginItem.state = .mixed
-        default: loginItem.state = .off
-        }
-        loginItem.title = !installed ? "Open at Login (run from /Applications)"
-            : status == .requiresApproval ? "Open at Login (allow in System Settings)" : "Open at Login"
-        loginItem.isEnabled = installed
-    }
-
-    @objc private func toggleOpenAtLogin() {
-        let service = SMAppService.mainApp
-        do {
-            if service.status == .enabled { try service.unregister() } else { try service.register() }
-        } catch {
-            NSLog("EdgeDeck: Open at Login failed: \(error)")
-            if service.status == .requiresApproval { SMAppService.openSystemSettingsLoginItems() }
-        }
-        refreshLoginItem()
+        if menu === remoteItem.submenu { fillRemoteMenu(menu) }
     }
 
     // MARK: Remote view
@@ -501,42 +473,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
 
     // MARK: Keyboard
 
-    /// Lending this Mac's keyboard to a Host that grabbed it (see KeyboardGrab.swift).
-    private func fillKeyboardMenu(_ menu: NSMenu) {
-        let lender = model.keyboardLender
-        menu.removeAllItems()
-        menu.autoenablesItems = false
-        let status = MenuAction(lender.lentTo.map { "Typing on \($0)" } ?? "This keyboard types here") {}
-        status.isEnabled = false
-        menu.addItem(status)
-        let takeBack = MenuAction("Take Back Keyboard (\(lender.shortcut.description))") { lender.takeBack() }
-        takeBack.isEnabled = lender.lentTo != nil
-        menu.addItem(takeBack)
-        menu.addItem(.separator())
-        menu.addItem(MenuAction("Take Back Keyboard Shortcut: \(lender.shortcut.description)…") { [weak self] in self?.recordTakeBackShortcut() })
-        menu.addItem(MenuAction("Allow Paired Macs to Grab the Keyboard", checked: lender.allowed) { lender.allowed.toggle() })
-    }
-
-    /// Asks for a new Take Back Keyboard shortcut: the next key pressed with ⌘, ⌥ or ⌃.
-    private func recordTakeBackShortcut() {
-        let lender = model.keyboardLender
-        let alert = NSAlert()
-        alert.messageText = "Press the new Take Back Keyboard shortcut"
-        alert.informativeText = "Hold ⌘, ⌥ or ⌃ and press a key. It always gives this Mac its keyboard back while another Mac has grabbed it. Now: \(lender.shortcut.description)"
-        alert.addButton(withTitle: "Cancel")
-        alert.addButton(withTitle: "Use \(KeyShortcut.standard.description)")
-        let monitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
-            guard let shortcut = KeyShortcut(event: event) else { return event }
-            lender.shortcut = shortcut
-            NSApp.stopModal(withCode: .alertThirdButtonReturn)
-            return nil
-        }
-        NSApp.activate()
-        let answer = alert.runModal()
-        if let monitor { NSEvent.removeMonitor(monitor) }
-        if answer == .alertSecondButtonReturn { lender.shortcut = .standard }
-    }
-
     private func setUpKeyboardLabel() {
         let panel = NSPanel(contentRect: NSRect(x: 0, y: 0, width: 640, height: 56), styleMask: [.borderless, .nonactivatingPanel],
                             backing: .buffered, defer: false)
@@ -565,52 +501,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
 
     // MARK: Touch
 
-    /// Rebuilt each time the menu opens, so it shows the current settings.
-    private func fillTouchMenu(_ menu: NSMenu) {
-        let touch = model.touch, settings = touch.settings
-        menu.removeAllItems()
-        menu.autoenablesItems = false
-        let status = MenuAction(touch.status.description) {}
-        status.isEnabled = false
-        menu.addItem(status)
-        switch touch.status {
-        case .needsInputMonitoring: menu.addItem(MenuAction("Open Input Monitoring Settings…") { Self.openPrivacy("Privacy_ListenEvent") })
-        case .needsAccessibility: menu.addItem(MenuAction("Open \(AppModel.accessibilityName) Settings…") { Self.openPrivacy("Privacy_Accessibility") })
-        case .edgetapRunning: menu.addItem(MenuAction("Quit Edgetap") { Self.quitEdgetap() })
-        default: break
-        }
-        menu.addItem(.separator())
-        menu.addItem(MenuAction("Touch Support", checked: settings.enabled) { settings.enabled.toggle() })
-        menu.addItem(.separator())
-        menu.addItem(Self.choices("Scroll Speed", [("0.5×", 0.5), ("0.75×", 0.75), ("1×", 1), ("1.5×", 1.5), ("2×", 2), ("3×", 3)],
-                                  settings.scrollSpeed) { settings.scrollSpeed = $0 })
-        menu.addItem(MenuAction("Reverse Scroll Direction", checked: settings.reverseScroll) { settings.reverseScroll.toggle() })
-        menu.addItem(MenuAction("Momentum Scrolling", checked: settings.momentum) { settings.momentum.toggle() })
-        let flick = Self.choices("Flick Acceleration", [("Off", 0), ("Low", 4000), ("Normal", 2000), ("High", 1000)],
-                                 settings.flickBoost) { settings.flickBoost = $0 }
-        flick.isEnabled = settings.momentum
-        menu.addItem(flick)
-        menu.addItem(.separator())
-        menu.addItem(Self.choices("Hold Time for Right-Click (other apps)", [("0.3 s", 0.3), ("0.5 s", 0.5), ("0.8 s", 0.8), ("1.2 s", 1.2)],
-                                  settings.holdDuration) { settings.holdDuration = $0 })
-        menu.addItem(MenuAction("Hide Cursor While Touching", checked: settings.hidesCursor) { settings.hidesCursor.toggle() })
-    }
-
-    private static func choices(_ title: String, _ options: [(String, Double)], _ current: Double,
-                                apply: @escaping (Double) -> Void) -> NSMenuItem {
-        let item = NSMenuItem(title: title, action: nil, keyEquivalent: "")
-        let submenu = NSMenu()
-        submenu.autoenablesItems = false
-        for (label, value) in options { submenu.addItem(MenuAction(label, checked: abs(value - current) < 0.001) { apply(value) }) }
-        item.submenu = submenu
-        return item
-    }
-
-    private static func openPrivacy(_ pane: String) {
+    static func openPrivacy(_ pane: String) {
         NSWorkspace.shared.open(URL(string: "x-apple.systempreferences:com.apple.preference.security?\(pane)")!)
     }
 
-    private static func quitEdgetap() {
+    static func quitEdgetap() {
         NSRunningApplication.runningApplications(withBundleIdentifier: TouchController.edgetapBundleID).forEach { $0.terminate() }
     }
 
@@ -693,10 +588,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
                                    width: size.width, height: size.height), display: true)
         if !toastPanel.isVisible { toastPanel.orderFrontRegardless() }
     }
-    @objc private func openConfig() { model.openConfigFile() }
     @objc private func reloadConfig() { model.configStore.reload() }
     @objc private func sendBack() { model.guest.sendBack() }
-    @objc private func openAccessibility() { model.openAccessibilitySettings() }
 
     func applicationWillTerminate(_ notification: Notification) {
         model.touch.stop()
