@@ -1,0 +1,52 @@
+# Checks every pull request (and every push to main): tests, then a release build of the app.
+# No certificates or secrets; the build is ad-hoc signed and never installed.
+name: CI
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+# A new push to the same PR cancels the run already in flight.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Changelog
+        if: github.event_name == 'pull_request'
+        env:
+          BASE: ${{ github.event.pull_request.base.sha }}
+        # Soft check: a warning annotation, never a failure.
+        run: |
+          changed="$(git diff --name-only "$BASE"...HEAD)"
+          if grep -qE '^(Sources|Resources)/' <<<"$changed" && ! grep -qx 'CHANGELOG.md' <<<"$changed"; then
+            echo "::warning file=CHANGELOG.md::This PR changes Sources/ or Resources/ but not CHANGELOG.md."
+          fi
+
+      - name: Test
+        run: ./scripts/test.sh 2>&1 | tee test.log; exit "${PIPESTATUS[0]}"
+
+      - name: Build
+        env:
+          SIGN_IDENTITY: "-"
+          NO_INSTALL: "1"
+        run: ./scripts/build.sh
+
+      - uses: actions/upload-artifact@v7
+        if: failure()
+        with:
+          name: test-log
+          path: test.log
+          if-no-files-found: ignore
