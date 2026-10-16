@@ -10,6 +10,10 @@ A touch dashboard for the CORSAIR Xeneon Edge used as a second display on a Mac:
 The physical Xeneon Edge touchscreen that EdgeDeck draws on.
 _Avoid_: Second screen, touchbar, panel
 
+**Native mode**:
+The Edge's own display mode, 2560×720 at the highest refresh rate it offers. EdgeDeck puts the Edge back in it whenever macOS leaves it in another mode (e.g. 1080p) and the user never has to open System Settings. It gives up and says so in the menu if it can't.
+_Avoid_: Proper resolution, default resolution
+
 **Touch support**:
 EdgeDeck holding the Edge's touchscreen and turning touches into input. It comes back by itself whenever the Edge is replugged; the user never has to restart it.
 _Avoid_: Touch enabled, touch active

@@ -405,6 +405,8 @@ struct DisplaySettings: Codable, Hashable {
     var match: String = "XENEON"
     /// Width of the Rail shown during a Takeover.
     var railWidth: Double = 150
+    /// Put the Edge back in its Native mode (2560×720) whenever macOS leaves it in another one.
+    var fixResolution = true
     /// Names used before CONTEXT.md, still accepted when reading.
     private enum LegacyKeys: String, CodingKey { case dockRailWidth }
 
@@ -414,6 +416,7 @@ struct DisplaySettings: Codable, Hashable {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         let d = DisplaySettings()
         match = try c.decodeIfPresent(String.self, forKey: .match) ?? d.match
+        fixResolution = try c.decodeIfPresent(Bool.self, forKey: .fixResolution) ?? d.fixResolution
         let legacy = try decoder.container(keyedBy: LegacyKeys.self)
         railWidth = try c.decodeIfPresent(Double.self, forKey: .railWidth)
             ?? legacy.decodeIfPresent(Double.self, forKey: .dockRailWidth) ?? d.railWidth

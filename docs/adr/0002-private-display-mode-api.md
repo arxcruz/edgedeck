@@ -1,0 +1,5 @@
+# Native mode is set through private CoreGraphics calls
+
+macOS hides the Edge's 2560×720 mode from the public `CGDisplayCopyAllDisplayModes`, even while it is the current mode; System Settings finds it under "Show all resolutions" in the private mode list. EdgeDeck reads that list and switches modes with `CGSGetDisplayModeDescriptionOfLength` and `CGSConfigureDisplayMode`, looked up by name at run time and confined to `PrivateDisplayModes.swift`.
+
+We chose this over shelling out to displayplacer or BetterDisplay (an install the user would have to do, and they use the same private calls) and over leaving the user to fix it by hand. The cost is that a future macOS may change or remove these calls, and the Mac App Store forbids private API. EdgeDeck ships as a notarized download and its Accessibility, HID and keyboard-grab features already rule out the sandbox, so the second cost is small. If a call goes missing, the fix fails visibly in the menu ("Couldn't set the Edge to 2560×720") instead of breaking anything; deleting the file leaves the public-list path.
