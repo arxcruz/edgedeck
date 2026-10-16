@@ -1,0 +1,30 @@
+# `/approve` on a pull request: label it `approved` and turn on auto-merge, so it squash-merges
+# as soon as the required `check` passes. Only the owner and collaborators with write access count.
+name: Approve
+
+on:
+  issue_comment:
+    types: [created]
+
+permissions:
+  contents: write
+  pull-requests: write
+  issues: write
+
+jobs:
+  approve:
+    if: >-
+      github.event.issue.pull_request &&
+      startsWith(github.event.comment.body, '/approve') &&
+      contains(fromJSON('["OWNER","MEMBER","COLLABORATOR"]'), github.event.comment.author_association)
+    runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ github.token }}
+      PR: ${{ github.event.issue.number }}
+      REPO: ${{ github.repository }}
+    steps:
+      - name: Label and enable auto-merge
+        run: |
+          gh label create approved --repo "$REPO" --color 0E8A16 --description "Approved with /approve" 2>/dev/null || true
+          gh pr edit "$PR" --repo "$REPO" --add-label approved
+          gh pr merge "$PR" --repo "$REPO" --auto --squash --delete-branch
