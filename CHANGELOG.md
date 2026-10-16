@@ -5,6 +5,8 @@ What changed in each EdgeDeck release. Downloads are on the
 
 ## Unreleased
 
+- **Fix:** the **App Windows** and **Mission Control** Controls, and any Button that sends an arrow
+  key with a modifier, now work the way the real keys do.
 - **Settings window:** Touch, Keyboard, Open at Login, Keep Edge at 2560×720 and config.json
   moved out of the menu bar's submenus into one window on your main screen (**Settings…**, ⌘,),
   with no menus to navigate and every change applied at once. It also covers settings that used

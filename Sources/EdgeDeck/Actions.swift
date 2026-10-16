@@ -161,6 +161,8 @@ enum AppLocator {
 /// Posts keyboard shortcuts ("cmd+shift+4") and media keys ("playpause") to the frontmost app.
 /// Needs the Accessibility permission.
 enum KeySender {
+    private static let arrowKeys: Set<String> = ["left", "right", "up", "down"]
+
     /// Returns false when the spec names an unknown key. With `pid`, the key goes to that app
     /// only, even if it isn't frontmost.
     @discardableResult
@@ -189,6 +191,9 @@ enum KeySender {
                 return false
             }
         }
+        // A real keyboard's arrow keys carry these two flags, and macOS's own shortcuts on them
+        // (App Exposé ⌃↓, Mission Control ⌃↑, switching Spaces) only match when they're there.
+        if arrowKeys.contains(keyName) { flags.formUnion([.maskSecondaryFn, .maskNumericPad]) }
         let source = CGEventSource(stateID: .hidSystemState)
         for down in [true, false] {
             let event = CGEvent(keyboardEventSource: source, virtualKey: keyCode, keyDown: down)
