@@ -11,14 +11,19 @@ final class TouchInput {
     var onReport: ((TouchReport) -> Void)?
     var onRemoved: (() -> Void)?
     private(set) var isRunning = false
+    /// Touch controllers currently attached and seized. Zero while running means the Edge's
+    /// touchscreen hasn't (re)appeared to this manager.
+    private(set) var attachedCount = 0
 
-    private let manager = IOHIDManagerCreate(kCFAllocatorDefault, IOOptionBits(kIOHIDOptionsTypeNone))
+    // A new manager per start: one that was closed doesn't reliably deliver attach callbacks
+    // again, which left touch dead after the Edge was replugged or Touch Support toggled.
+    private var manager: IOHIDManager?
     private let buffer = UnsafeMutablePointer<UInt8>.allocate(capacity: 64)
-    private var configured = false
 
     func start() throws {
         guard !isRunning else { return }
-        configure()
+        let manager = IOHIDManagerCreate(kCFAllocatorDefault, IOOptionBits(kIOHIDOptionsTypeNone))
+        configure(manager)
         // Common modes, not just the default one: while AppKit tracks a press (e.g. a tap in a
         // text field), the run loop is in event-tracking mode and must still hear the finger lift,
         // or AppKit waits for that mouse-up forever and every touch after it is lost.
@@ -28,19 +33,23 @@ final class TouchInput {
             IOHIDManagerUnscheduleFromRunLoop(manager, CFRunLoopGetMain(), CFRunLoopMode.commonModes.rawValue)
             throw StartError.openFailed(rc)
         }
+        self.manager = manager
+        attachedCount = 0
         isRunning = true
     }
 
     func stop() {
-        guard isRunning else { return }
+        guard isRunning, let manager else { return }
+        IOHIDManagerRegisterDeviceMatchingCallback(manager, nil, nil)
+        IOHIDManagerRegisterDeviceRemovalCallback(manager, nil, nil)
         IOHIDManagerClose(manager, IOOptionBits(kIOHIDOptionsTypeNone))
         IOHIDManagerUnscheduleFromRunLoop(manager, CFRunLoopGetMain(), CFRunLoopMode.commonModes.rawValue)
+        self.manager = nil
+        attachedCount = 0
         isRunning = false
     }
 
-    private func configure() {
-        guard !configured else { return }
-        configured = true
+    private func configure(_ manager: IOHIDManager) {
         let match: [String: Any] = [
             kIOHIDVendorIDKey: TouchInput.vendorID,
             kIOHIDPrimaryUsagePageKey: 0x01,
@@ -56,11 +65,13 @@ final class TouchInput {
                 let bytes = Array(UnsafeBufferPointer(start: report, count: length))
                 if let parsed = TouchReport(bytes: bytes) { input.onReport?(parsed) }
             }, context)
+            input.attachedCount += 1
             NSLog("EdgeDeck: touch controller attached")
         }, context)
 
         IOHIDManagerRegisterDeviceRemovalCallback(manager, { context, _, _, _ in
             let input = Unmanaged<TouchInput>.fromOpaque(context!).takeUnretainedValue()
+            input.attachedCount = max(0, input.attachedCount - 1)
             NSLog("EdgeDeck: touch controller removed")
             input.onRemoved?()
         }, context)
