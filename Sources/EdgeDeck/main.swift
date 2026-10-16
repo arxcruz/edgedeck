@@ -61,6 +61,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
     /// On a Plain display: the pull-tab hint at the right edge, shown for a few seconds.
     private var pullTab: EdgePanel!
     private var pullTabHide: DispatchWorkItem?
+    private let edgeResolution = EdgeResolution()
+    private var resolutionItem: NSMenuItem!
     /// On a Plain display: Needs-you Toasts float over whatever windows are on the Edge.
     private var toastPanel: EdgePanel!
     /// The dashboard in a window on the main display, for looking and editing while the Edge
@@ -255,6 +257,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
             }
             edgeSize = frame.size
             model.touch.display = (screen.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? NSNumber)?.uint32Value
+            if model.config.display.fixResolution, let display = model.touch.display {
+                // Switching raises another display change, which places the panel again.
+                DispatchQueue.main.async { [weak self] in
+                    self?.edgeResolution.check(display)
+                    self?.updateResolutionItem()
+                }
+            }
             if model.plainDisplay {
                 // A normal monitor: no Dashboard and no cover over the Edge's menu bar.
                 panel.orderOut(nil)
@@ -323,6 +332,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
         updateStatusItem()
     }
 
+    @objc private func fixResolution() {
+        guard let display = model.touch.display else { return }
+        edgeResolution.check(display, manual: true)
+        updateResolutionItem()
+    }
+
+    private func updateResolutionItem() {
+        resolutionItem?.title = edgeResolution.stuck
+            ? "Couldn't set the Edge to 2560×720 — Try Again" : "Fix Edge Resolution"
+    }
+
     private func setUpStatusItem() {
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
         statusItem.button?.image = NSImage(systemSymbolName: "rectangle.split.3x1", accessibilityDescription: "EdgeDeck")
@@ -342,6 +362,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
         menu.addItem(remoteItem)
         plainItem = NSMenuItem(title: "Use as Plain Display", action: #selector(togglePlainDisplay), keyEquivalent: "d")
         menu.addItem(plainItem)
+        resolutionItem = NSMenuItem(title: "Fix Edge Resolution", action: #selector(fixResolution), keyEquivalent: "")
+        menu.addItem(resolutionItem)
         menu.addItem(NSMenuItem(title: "Open config.json", action: #selector(openConfig), keyEquivalent: ","))
         menu.addItem(NSMenuItem(title: "Reload Config", action: #selector(reloadConfig), keyEquivalent: "r"))
         menu.addItem(NSMenuItem(title: "Send Back Guest App", action: #selector(sendBack), keyEquivalent: "u"))

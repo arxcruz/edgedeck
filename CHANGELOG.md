@@ -5,6 +5,10 @@ What changed in each EdgeDeck release. Downloads are on the
 
 ## Unreleased
 
+- **Edge goes back to 2560×720 by itself:** when macOS drops the Edge to 1080p (after a replug,
+  wake or KVM switch), EdgeDeck puts it back in its Native mode, with no trip to System Settings.
+  **Fix Edge Resolution** in the menu does it on demand, and says so if it can't. Turn it off
+  with `"fixResolution": false` under `display` in config.json.
 - **Timer** and **Pomodoro** widgets: start a countdown with one tap on a chip, pause and resume
   by tapping the time, and take Rounds of Work and Break. When one runs out it rings: the
   widget pulses, a sound plays and a Toast says which (a button on the Rail during a
