@@ -74,7 +74,7 @@ stays on the Mac.
 EdgeDeck also has its own [touch handling](#touch) built in: it takes exclusive control
 of the Edge's touchscreen, so if you use another touch driver or utility for the Edge,
 the two will conflict. Only one can hold the touchscreen at a time. To keep your own
-tool, turn EdgeDeck's touch off in the menu bar's **Touch** submenu.
+tool, turn EdgeDeck's touch off in **Settings → Touch**.
 
 I haven't tested it extensively for memory leaks or for how much CPU it uses, so keep
 an eye on it if that matters to you.
@@ -199,8 +199,11 @@ The build is ad-hoc signed, so macOS treats every rebuild as a new app and you
 have to re-enable Accessibility after rebuilding. To avoid that, sign with a
 stable identity: `SIGN_IDENTITY="Your Cert Name" ./scripts/build.sh`.
 
-The menu bar icon has Edit Layout, **Use as Plain Display**, Open config.json, Reload,
-Send Back Guest App, **Touch** settings, **Open at Login** and Quit. Open at Login works for the copy in `/Applications`.
+The menu bar icon has Edit Layout, **Use as Plain Display**, Reload Config, Send Back Guest App,
+**Settings…** (⌘,) and Quit. **Settings** is an ordinary window on your main screen with
+General (**Open at Login**, which works for the copy in `/Applications`, and config.json), Display
+(which screen is the Edge, Rail width), Touch, Keyboard, Notifications (which apps come to the Edge
+or are ignored, how many to keep, Toast time, how often to look); changes apply at once.
 
 ## Touch
 
@@ -224,7 +227,7 @@ to be the separate Edgetap app) and decides at touch-down where each touch goes:
 
 Touch needs Accessibility, and on some older macOS versions also **Input Monitoring**
 (System Settings → Privacy & Security → Input Monitoring → EdgeDeck); EdgeDeck asks for
-it only when macOS says it's missing, and a banner on the Edge says so until it's granted. The menu bar's **Touch** submenu turns it on or off (off hands the
+it only when macOS says it's missing, and a banner on the Edge says so until it's granted. **Settings → Touch** turns it on or off (off hands the
 touchscreen back to macOS) and has scroll speed, reverse direction, momentum, flick
 acceleration, the hold time and hiding the cursor. If the old Edgetap app is
 running, EdgeDeck offers to quit it, since only one app can hold the touchscreen.
@@ -294,9 +297,9 @@ Mac's keyboard** while an app is on the Edge:
   screen and a keyboard icon in its menu bar; its mouse stays its own.
 - **Release keyboard**, sending the app back, or another app replacing it gives the
   keyboard back. So does the other Mac on its own: its **Take Back Keyboard** shortcut
-  (⌃⌥⌘K unless you change it), its menu bar (Keyboard → Take Back Keyboard), or losing
+  (⌃⌥⌘K unless you change it), **Settings → Keyboard → Take Back Keyboard**, or losing
   touch with this Mac for two seconds.
-- On the other Mac, the menu bar's **Keyboard** submenu changes the shortcut (Record) and
+- On the other Mac, **Settings → Keyboard** changes the shortcut (Record Shortcut) and
   can stop Paired Macs from grabbing the keyboard at all. It needs EdgeDeck's
   Accessibility permission there; while a password field is active on it, macOS hides the
   keys from every app and the strip says **Keyboard paused**.

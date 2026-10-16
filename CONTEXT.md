@@ -11,12 +11,16 @@ The physical Xeneon Edge touchscreen that EdgeDeck draws on.
 _Avoid_: Second screen, touchbar, panel
 
 **Native mode**:
-The Edge's own display mode, 2560×720 at the highest refresh rate it offers. EdgeDeck puts the Edge back in it whenever macOS leaves it in another mode (e.g. 1080p) and the user never has to open System Settings. It gives up and says so in the menu if it can't.
+The Edge's own display mode, 2560×720 at the highest refresh rate it offers. EdgeDeck puts the Edge back in it whenever macOS leaves it in another mode (e.g. 1080p) and the user never has to open System Settings. It gives up and says so in the Settings window if it can't.
 _Avoid_: Proper resolution, default resolution
 
 **Touch support**:
 EdgeDeck holding the Edge's touchscreen and turning touches into input. It comes back by itself whenever the Edge is replugged; the user never has to restart it.
 _Avoid_: Touch enabled, touch active
+
+**Settings window**:
+The ordinary Mac window, never opened on the Edge unless it is the only display, where the app-level settings are changed: General, Display, Touch, Keyboard and Notifications. Changes apply at once. It is not Edit mode: Widgets are still configured in their Editors on the Edge.
+_Avoid_: Preferences, settings sheet, settings menu
 
 **Dashboard**:
 Everything EdgeDeck shows on the Edge when no Takeover is active: the current Page plus the Page dots.

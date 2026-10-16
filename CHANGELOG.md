@@ -5,10 +5,14 @@ What changed in each EdgeDeck release. Downloads are on the
 
 ## Unreleased
 
+- **Settings window:** Touch, Keyboard, Open at Login, Keep Edge at 2560×720 and config.json
+  moved out of the menu bar's submenus into one window on your main screen (**Settings…**, ⌘,),
+  with no menus to navigate and every change applied at once. It also covers settings that used
+  to need editing config.json: the Edge's display name, the Rail width and the Notifications options.
 - **Edge goes back to 2560×720 by itself:** when macOS drops the Edge to 1080p (after a replug,
   wake or KVM switch), EdgeDeck puts it back in its Native mode, with no trip to System Settings.
-  Untick **Keep Edge at 2560×720** in the menu to leave the resolution alone; if the switch
-  fails, the menu says so and offers **Try Again**.
+  Untick **Keep Edge at 2560×720** in **Settings → Display** to leave the resolution alone; if the
+  switch fails, Settings says so and offers **Try Again**.
 - **Timer** and **Pomodoro** widgets: start a countdown with one tap on a chip, pause and resume
   by tapping the time, and take Rounds of Work and Break. When one runs out it rings: the
   widget pulses, a sound plays and a Toast says which (a button on the Rail during a
