@@ -63,6 +63,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
     private var pullTabHide: DispatchWorkItem?
     private let edgeResolution = EdgeResolution()
     private var resolutionItem: NSMenuItem!
+    private var keepResolutionItem: NSMenuItem!
     /// On a Plain display: Needs-you Toasts float over whatever windows are on the Edge.
     private var toastPanel: EdgePanel!
     /// The dashboard in a window on the main display, for looking and editing while the Edge
@@ -332,6 +333,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
         updateStatusItem()
     }
 
+    @objc private func toggleKeepResolution() {
+        model.configStore.update { $0.display.fixResolution.toggle() }
+        if model.config.display.fixResolution { placePanel() }
+    }
+
     @objc private func fixResolution() {
         guard let display = model.touch.display else { return }
         edgeResolution.check(display, manual: true)
@@ -364,6 +370,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
         menu.addItem(plainItem)
         resolutionItem = NSMenuItem(title: "Fix Edge Resolution", action: #selector(fixResolution), keyEquivalent: "")
         menu.addItem(resolutionItem)
+        keepResolutionItem = NSMenuItem(title: "Keep Edge at 2560×720", action: #selector(toggleKeepResolution), keyEquivalent: "")
+        menu.addItem(keepResolutionItem)
         menu.addItem(NSMenuItem(title: "Open config.json", action: #selector(openConfig), keyEquivalent: ","))
         menu.addItem(NSMenuItem(title: "Reload Config", action: #selector(reloadConfig), keyEquivalent: "r"))
         menu.addItem(NSMenuItem(title: "Send Back Guest App", action: #selector(sendBack), keyEquivalent: "u"))
@@ -388,6 +396,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
 
         model.$editing.sink { [weak self] editing in self?.editItem.state = editing ? .on : .off }.store(in: &cancellables)
         model.$plainDisplay.sink { [weak self] plain in self?.plainItem.state = plain ? .on : .off }.store(in: &cancellables)
+        model.configStore.$config.sink { [weak self] config in
+            self?.keepResolutionItem.state = config.display.fixResolution ? .on : .off
+        }.store(in: &cancellables)
     }
 
     /// The menu bar icon and menu say whether the Edge is connected.
