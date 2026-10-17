@@ -67,7 +67,10 @@ final class MusicModel: ObservableObject {
     private let queue = DispatchQueue(label: "edgedeck.music")
     private var compiled: [String: NSAppleScript] = [:]
     private var visibleWidgets = Set<UUID>()
-    private var libraryLoaded = false
+    /// Each list is loaded once it has actually arrived; until then every poll tries again.
+    private var playlistsLoaded = false
+    private var albumsLoaded = false
+    private var loading = Set<String>()
     private var artworkRequested = Set<String>()
     private var lastDevicesRefresh = Date.distantPast
     /// No scripts before this: Music may be quitting (see `start`).
@@ -83,7 +86,8 @@ final class MusicModel: ObservableObject {
         for name in [NSWorkspace.didLaunchApplicationNotification, NSWorkspace.didTerminateApplicationNotification] {
             center.addObserver(forName: name, object: nil, queue: .main) { [weak self] note in
                 guard (note.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication)?.bundleIdentifier == Self.bundleID else { return }
-                self?.libraryLoaded = false
+                self?.playlistsLoaded = false
+                self?.albumsLoaded = false
                 self?.poll()
             }
         }
@@ -139,12 +143,17 @@ final class MusicModel: ObservableObject {
     }
 
     /// Music silently does nothing for tracks it can't play (e.g. an old purchase this Mac
-    /// isn't authorized for), so say so if nothing is playing shortly after.
-    private func checkStarted(_ what: String) {
-        DispatchQueue.main.asyncAfter(deadline: .now() + 2) { [weak self] in
+    /// isn't authorized for), so say so if nothing is playing after a while. Streamed
+    /// Apple Music tracks take several seconds to start, so keep checking before giving up.
+    private func checkStarted(_ what: String, attempt: Int = 0) {
+        DispatchQueue.main.asyncAfter(deadline: .now() + (attempt == 0 ? 2 : 2.5)) { [weak self] in
             self?.run("return player state as text") { result in
                 guard result?.stringValue != "playing" else { return }
-                self?.message = "Music couldn't play \(what) — its tracks may be unavailable on this Mac"
+                if attempt < 4 {
+                    self?.checkStarted(what, attempt: attempt + 1)
+                } else {
+                    self?.message = "Music couldn't play \(what) — its tracks may be unavailable on this Mac"
+                }
             }
         }
     }
@@ -224,15 +233,18 @@ final class MusicModel: ObservableObject {
             favorited = f[4].booleanValue
             hasTrack = f[5].booleanValue
             currentPlaylist = f[6].stringValue.flatMap { $0.isEmpty ? nil : $0 }
-            if !libraryLoaded { loadLibrary() }
+            if !playlistsLoaded || !albumsLoaded { loadLibrary() }
             if Date().timeIntervalSince(lastDevicesRefresh) > 15 { refreshDevices() }
         }
     }
 
     private func loadLibrary() {
-        libraryLoaded = true
+        if !playlistsLoaded, loading.insert("playlists").inserted {
         run(Self.playlistsScript) { [weak self] result in
-            guard let self, let result else { return }
+            guard let self else { return }
+            loading.remove("playlists")
+            guard let result else { NSLog("EdgeDeck: Music playlists came back empty, will retry"); return }
+            playlistsLoaded = true
             playlists = Self.items(result).compactMap { item in
                 let f = Self.items(item)
                 guard f.count >= 4, let name = f[1].stringValue, name != Self.queuePlaylist else { return nil }
@@ -243,10 +255,15 @@ final class MusicModel: ObservableObject {
             }
             .filter { $0.trackCount > 0 && $0.name != "Music Videos" }
         }
+        }
+        if !albumsLoaded, loading.insert("albums").inserted {
         run(Self.tracksScript) { [weak self] result in
-            guard let self, let result else { return }
+            guard let self else { return }
+            loading.remove("albums")
+            guard let result else { NSLog("EdgeDeck: Music albums came back empty, will retry"); return }
             let columns = Self.items(result).map { Self.items($0) }
-            guard columns.count == 6 else { return }
+            guard columns.count == 6 else { NSLog("EdgeDeck: Music albums had \(columns.count) columns, will retry"); return }
+            albumsLoaded = true
             struct Row { let id: String; let album: String; let artist: String; let disc: Int; let track: Int }
             var rows: [Row] = []
             for i in 0..<columns[0].count {
@@ -264,6 +281,7 @@ final class MusicModel: ObservableObject {
             }
             .sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
         }
+        }
     }
 
     // MARK: Artwork
@@ -273,6 +291,7 @@ final class MusicModel: ObservableObject {
         guard let first = album.trackIDs.first, artworkRequested.insert(album.id).inserted else { return }
         run("return raw data of artwork 1 of (first track of library playlist 1 whose persistent ID is \(Self.quote(first)))") { [weak self] result in
             if let image = result.flatMap(Self.image) { self?.artwork[album.id] = image }
+            else { self?.artworkRequested.remove(album.id) }  // asked again when the tile reappears
         }
     }
 
@@ -296,9 +315,12 @@ final class MusicModel: ObservableObject {
         end repeat
         return out
         """) { [weak self] result in
-            guard let result else { return }
-            let images = Self.items(result).compactMap(Self.image)
+            let images = result.map { Self.items($0).compactMap(Self.image) } ?? []
             if let image = Self.mosaic(images) { self?.artwork[playlist.id] = image }
+            else {
+                NSLog("EdgeDeck: no artwork for playlist “\(playlist.name)”")
+                self?.artworkRequested.remove(playlist.id)
+            }
         }
     }
 
@@ -733,12 +755,18 @@ private struct MusicTile: View {
             Image(nsImage: image).resizable().interpolation(.high).aspectRatio(contentMode: .fill)
         } else {
             ZStack {
-                LinearGradient(colors: [Color(hex: "#FC3C44"), Color(hex: "#A8326E")], startPoint: .topLeading, endPoint: .bottomTrailing)
-                Image(systemName: isShuffle ? "shuffle" : "music.note.list")
+                LinearGradient(colors: isFavorites ? [Color(hex: "#FF6B8A"), Color(hex: "#FF375F")] : [Color(hex: "#FC3C44"), Color(hex: "#A8326E")],
+                               startPoint: .topLeading, endPoint: .bottomTrailing)
+                Image(systemName: isShuffle ? "shuffle" : isFavorites ? "heart.fill" : "music.note.list")
                     .font(.system(size: 36, weight: .semibold))
                     .foregroundStyle(.white.opacity(0.9))
             }
         }
+    }
+
+    /// Music's own Favourite Songs playlist: its catalog tracks expose no artwork to AppleScript.
+    private var isFavorites: Bool {
+        if case .playlist(let p) = item { ["Favourite Songs", "Favorite Songs"].contains(p.name) } else { false }
     }
 
     private var isShuffle: Bool { if case .shuffleAll = item { true } else { false } }
