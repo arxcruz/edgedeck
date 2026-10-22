@@ -3,6 +3,12 @@
 What changed in each EdgeDeck release. Downloads are on the
 [Releases](https://github.com/arxcruz/edgedeck/releases) page.
 
+## Unreleased
+
+- **Temperature** and **Fans** widgets: CPU and GPU temperature with a graph, and the speed of each
+  fan. Tap Temperature to turn it over between °C and °F; each widget remembers its own side.
+  They read the sensors only while one is on the current page.
+
 ## 0.2.0 — 2026-10-16
 
 - **Fix:** the **App Windows** and **Mission Control** Controls, and any Button that sends an arrow

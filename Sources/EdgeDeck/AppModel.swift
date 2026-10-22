@@ -6,6 +6,7 @@ import Combine
 final class AppModel: ObservableObject {
     let configStore = ConfigStore()
     let stats = StatsSampler()
+    let sensors = SensorSampler()
     let notifications = NotificationWatcher()
     let guest = GuestAppManager()
     let runningApps = RunningAppsModel()
@@ -169,6 +170,11 @@ final class AppModel: ObservableObject {
             self?.currentPage.widgets.contains { [.cpu, .gpu, .memory, .disk, .network].contains($0.kind) } ?? true
         }
         stats.start()
+        sensors.needs = { [weak self] in
+            let kinds = self?.currentPage.widgets.map(\.kind) ?? []
+            return (kinds.contains(.temperature), kinds.contains(.fans))
+        }
+        sensors.start()
         notifications.start()
         runningApps.isNeeded = { [weak self] in self?.currentPage.widgets.contains { $0.kind == .runningApps } ?? true }
         runningApps.start()

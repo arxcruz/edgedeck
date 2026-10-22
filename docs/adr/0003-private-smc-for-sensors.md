@@ -1,0 +1,5 @@
+# Temperatures and fans are read from the SMC
+
+macOS has no public API for the CPU and GPU temperatures or the fan speeds. EdgeDeck opens the `AppleSMC` IOKit service and reads its keys directly (`Tp`/`Te` for CPU cores, `Tg` for GPU clusters, `F0Ac` and friends for fans), confined to `Sensors.swift`. The same user client is used by the open-source stats menu-bar apps, and it needs no elevated privileges.
+
+We chose this over `powermetrics` (needs root, so a password prompt or a privileged helper), over the HID temperature sensors (readable without root, but named only "PMU tdie1" and the like, so they can't be told apart as CPU or GPU), and over leaving the Widgets out. The cost is that the SMC's layout is private and its key names change between chip generations, so a new Mac can lose a reading. Each reading therefore degrades on its own: a missing sensor shows "Unavailable" and a Mac without fans says so, never a wrong number. The keys are found once at start and only the believable ones (10–125 °C) are used. If a future macOS closes the user client, deleting `Sensors.swift` and the two Widget kinds is the whole fix.

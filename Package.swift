@@ -7,7 +7,7 @@ let package = Package(
     targets: [
         .executableTarget(
             name: "EdgeDeck",
-            dependencies: ["EdgeTouch", "EdgeDisplay"],
+            dependencies: ["EdgeTouch", "EdgeDisplay", "EdgeSensors"],
             path: "Sources/EdgeDeck",
             linkerSettings: [.linkedFramework("IOKit"), .linkedFramework("ApplicationServices"), .linkedLibrary("sqlite3")]
         ),
@@ -17,6 +17,9 @@ let package = Package(
         // Which display mode is the Edge's Native mode, and how often to try to restore it (pure, unit-tested).
         .target(name: "EdgeDisplay", path: "Sources/EdgeDisplay"),
         .testTarget(name: "EdgeDisplayTests", dependencies: ["EdgeDisplay"], path: "Tests/EdgeDisplayTests"),
+        // Temperature units, heat levels and fan readings (pure, unit-tested).
+        .target(name: "EdgeSensors", path: "Sources/EdgeSensors"),
+        .testTarget(name: "EdgeSensorsTests", dependencies: ["EdgeSensors"], path: "Tests/EdgeSensorsTests"),
         // Hardware exploration: dumps the touch controller's HID descriptors and raw reports.
         .executableTarget(name: "touch-probe", path: "Sources/touch-probe"),
     ]

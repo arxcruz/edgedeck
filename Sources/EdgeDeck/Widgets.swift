@@ -8,6 +8,8 @@ struct WidgetView: View {
         switch widget.kind {
         case .cpu: CPUWidget()
         case .gpu: GPUWidget()
+        case .temperature: TemperatureWidget(widget: widget)
+        case .fans: FansWidget()
         case .memory: MemoryWidget()
         case .disk: DiskWidget()
         case .network: NetworkWidget()
