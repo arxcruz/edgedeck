@@ -348,7 +348,7 @@ which is also live-reloaded when you edit it by hand:
 ]
 ```
 
-Widget types: `cpu`, `gpu`, `memory`, `disk`, `network`,
+Widget types: `cpu`, `gpu`, `temperature`, `fans`, `memory`, `disk`, `network`,
 `notifications`, `launcher`, `runningApps`, `nowPlaying`, `worldClock`, `weather`,
 `calendar`, `music`, `ai`, `timer`, `pomodoro`. Older `clock` widgets become a World Clock showing
 the Local city, which looks the same. Older single-row configs are converted automatically (the original is kept
@@ -445,6 +445,19 @@ The first time, tap **Allow Calendar Access** on the widget. Optional settings:
 
 `days` is how many days to show starting today (1–7, default 2); `calendars`
 limits it to those calendar names (all by default).
+
+## Temperature & Fans
+
+**Temperature** shows the hottest CPU and the hottest GPU sensor, with a graph of the last two
+minutes, and the numbers turn orange from 70 °C and red from 90 °C. **Tap** it to turn the card over
+between °C and °F; each Temperature widget remembers its own side (`"fahrenheit": true` in
+config.json, Celsius when absent). **Fans** shows each fan's speed and its share of the fastest it
+can go. Macs stop their fans when cool, so it says **Idle** then, and **No fans on this Mac** on a
+MacBook Air.
+
+Both read the Mac's sensor chip (SMC) directly, with no extra access to grant, and only while one of
+them is on the current page. They are tested on Apple silicon; on a Mac whose sensors EdgeDeck can't
+find, the widget says **Unavailable** rather than guessing.
 
 ## Timer & Pomodoro
 

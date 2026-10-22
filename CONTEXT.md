@@ -84,7 +84,7 @@ The Edit-mode list of Widget kinds to add to a Page.
 _Avoid_: Add Widget menu, editor
 
 **Edit mode**:
-The Dashboard state in which Widgets and Pages are moved, resized, added, removed and configured. Configuration UI belongs here, not on Widgets in normal use.
+The Dashboard state in which Widgets and Pages are moved, resized, added, removed and configured. Configuration UI belongs here, not on Widgets in normal use. (A Widget may still answer a Tap with a change of view, like the Unit flip.)
 _Avoid_: Layout mode, settings
 
 ### Input
@@ -207,6 +207,20 @@ _Avoid_: Pomodoro (for one unit), session, interval
 **Cycle**:
 The set of Rounds that ends with the long Break, after which the Pomodoro starts again at its first Round.
 _Avoid_: Set, session
+
+### Sensors
+
+**Temperature**:
+The Widget kind showing the Mac's CPU and GPU temperatures. The CPU and GPU are one chip, so they are two readings in one Widget, not two Widgets.
+_Avoid_: Thermals, heat widget
+
+**Fans**:
+The Widget kind showing the speed of each of the Mac's fans. The fans cool the whole machine, so there is no separate CPU fan and GPU fan. On a Mac with no fans it says so.
+_Avoid_: CPU fan, GPU fan, cooling
+
+**Unit flip**:
+A Tap on a Temperature Widget that turns it over, like a card, between Celsius and Fahrenheit. It applies to that Widget only and is remembered; a new Temperature Widget starts in Celsius. It is a change of view, not configuration, so it needs no Editor.
+_Avoid_: Unit setting, toggle
 
 ### AI agents
 

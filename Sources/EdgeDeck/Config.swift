@@ -1,7 +1,7 @@
 import Foundation
 
 enum WidgetKind: String, Codable, CaseIterable, Identifiable {
-    case cpu, gpu, memory, disk, network, notifications, launcher, runningApps, nowPlaying, worldClock, weather, calendar, music, ai, timer, pomodoro
+    case cpu, gpu, temperature, fans, memory, disk, network, notifications, launcher, runningApps, nowPlaying, worldClock, weather, calendar, music, ai, timer, pomodoro
 
     var id: String { rawValue }
 
@@ -9,6 +9,8 @@ enum WidgetKind: String, Codable, CaseIterable, Identifiable {
         switch self {
         case .cpu: "CPU"
         case .gpu: "GPU"
+        case .temperature: "Temperature"
+        case .fans: "Fans"
         case .memory: "Memory"
         case .disk: "Disk"
         case .network: "Network"
@@ -30,6 +32,8 @@ enum WidgetKind: String, Codable, CaseIterable, Identifiable {
         switch self {
         case .cpu: "cpu"
         case .gpu: "square.stack.3d.up"
+        case .temperature: "thermometer.medium"
+        case .fans: "fan"
         case .memory: "memorychip"
         case .disk: "internaldrive"
         case .network: "network"
@@ -50,7 +54,7 @@ enum WidgetKind: String, Codable, CaseIterable, Identifiable {
     /// Size in grid cells when added to a page (on the default 30×4 grid).
     var defaultSize: (w: Int, h: Int) {
         switch self {
-        case .cpu, .gpu, .memory, .disk, .network: (3, 2)
+        case .cpu, .gpu, .temperature, .fans, .memory, .disk, .network: (3, 2)
         case .notifications: (7, 4)
         case .launcher: (6, 2)
         case .runningApps: (5, 4)
@@ -216,6 +220,8 @@ struct WidgetConfig: Codable, Hashable, Identifiable {
     var pomodoro: PomodoroLengths?
     /// Timer and Pomodoro: the macOS system sound played when Ringing (e.g. "Glass").
     var sound: String?
+    /// Temperature only: show Fahrenheit. Absent means Celsius.
+    var fahrenheit: Bool?
     /// Pre-pages configs sized widgets by relative width in a single row.
     var legacyWidth: Double?
 
@@ -233,7 +239,7 @@ struct WidgetConfig: Codable, Hashable, Identifiable {
     static let defaultPresets = [1, 5, 10, 25]
 
     /// `zones` is the old name of `cities`; `location` the old form of `city`.
-    enum CodingKeys: String, CodingKey { case id, kind = "type", frame, title, buttons, cities, zones, city, location, calendars, days, presets, pomodoro, sound, width }
+    enum CodingKeys: String, CodingKey { case id, kind = "type", frame, title, buttons, cities, zones, city, location, calendars, days, presets, pomodoro, sound, fahrenheit, width }
 
     init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
@@ -261,6 +267,7 @@ struct WidgetConfig: Codable, Hashable, Identifiable {
         presets = try c.decodeIfPresent([Int].self, forKey: .presets)
         pomodoro = try c.decodeIfPresent(PomodoroLengths.self, forKey: .pomodoro)
         sound = try c.decodeIfPresent(String.self, forKey: .sound)
+        fahrenheit = try c.decodeIfPresent(Bool.self, forKey: .fahrenheit)
         legacyWidth = try c.decodeIfPresent(Double.self, forKey: .width)
     }
 
@@ -278,6 +285,7 @@ struct WidgetConfig: Codable, Hashable, Identifiable {
         try c.encodeIfPresent(presets, forKey: .presets)
         try c.encodeIfPresent(pomodoro, forKey: .pomodoro)
         try c.encodeIfPresent(sound, forKey: .sound)
+        try c.encodeIfPresent(fahrenheit, forKey: .fahrenheit)
     }
 }
 

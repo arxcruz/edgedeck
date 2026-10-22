@@ -141,6 +141,7 @@ struct DashboardView: View {
         .animation(.spring(response: 0.35, dampingFraction: 0.85), value: model.ai.toastSessions)
         .animation(.spring(response: 0.35, dampingFraction: 0.85), value: model.timing.toastRinging)
         .environmentObject(model.stats)
+        .environmentObject(model.sensors)
         .environmentObject(model.runningApps)
         .environmentObject(model.nowPlaying)
         .environmentObject(model.weather)

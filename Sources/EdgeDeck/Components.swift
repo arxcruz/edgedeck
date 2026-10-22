@@ -11,6 +11,8 @@ enum Theme {
         switch type {
         case .cpu: Color(hex: "#5E9EFF")
         case .gpu: Color(hex: "#BF5AF2")
+        case .temperature: Color(hex: "#FF6A5C")
+        case .fans: Color(hex: "#7FD1AE")
         case .memory: Color(hex: "#30D158")
         case .disk: Color(hex: "#FF9F0A")
         case .network: Color(hex: "#64D2FF")
