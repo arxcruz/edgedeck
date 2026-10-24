@@ -17,6 +17,7 @@ final class AppModel: ObservableObject {
     let music = MusicModel()
     let ai = AIModel()
     let timing = TimingModel()
+    let markets = MarketsModel()
     let touch = TouchController()
     let swipe = SwipeState()
     let remoteHost = RemoteHost()
@@ -52,7 +53,10 @@ final class AppModel: ObservableObject {
                 cityEditorWidgetID = nil
                 launcherEditorWidgetID = nil
                 timingEditorWidgetID = nil
+                marketsEditorWidgetID = nil
                 ai.connectEditorOpen = false
+            } else {
+                markets.refreshAll()
             }
         }
     }
@@ -66,6 +70,9 @@ final class AppModel: ObservableObject {
                 self?.notifications.settings = config.notifications
                 self?.guest.railWidth = config.display.railWidth
                 self?.ai.settings = config.ai
+                self?.markets.chosenSeconds = config.markets.refreshSeconds
+                self?.markets.widgets = Dictionary(uniqueKeysWithValues: config.pages.flatMap(\.widgets)
+                    .filter { $0.kind == .stocks || $0.kind == .currency }.map { ($0.id, $0) })
                 self?.timing.widgets = Dictionary(uniqueKeysWithValues: config.pages.flatMap(\.widgets)
                     .filter { $0.kind == .timer || $0.kind == .pomodoro }.map { ($0.id, $0) })
             }
@@ -146,7 +153,7 @@ final class AppModel: ObservableObject {
         }
 
         // Forward nested changes so views observing the model refresh.
-        for publisher in [configStore.objectWillChange, touch.objectWillChange, notifications.objectWillChange, guest.objectWillChange, player.objectWillChange, ai.objectWillChange, timing.objectWillChange, remoteHost.objectWillChange, remoteSource.objectWillChange, keyboard.objectWillChange] {
+        for publisher in [configStore.objectWillChange, touch.objectWillChange, notifications.objectWillChange, guest.objectWillChange, player.objectWillChange, ai.objectWillChange, timing.objectWillChange, markets.objectWillChange, remoteHost.objectWillChange, remoteSource.objectWillChange, keyboard.objectWillChange] {
             publisher.sink { [weak self] _ in self?.objectWillChange.send() }.store(in: &cancellables)
         }
 
@@ -184,6 +191,8 @@ final class AppModel: ObservableObject {
         music.start()
         ai.start()
         timing.start()
+        markets.update = { [weak self] id, change in self?.updateWidget(id, change) }
+        markets.start()
         touch.start()
         remoteHost.start()
         remoteSource.start()
@@ -358,12 +367,23 @@ final class AppModel: ObservableObject {
     @Published var timingEditorWidgetID: UUID? {
         didSet { if timingEditorWidgetID == nil { endTyping() } }
     }
+    /// Stocks or Currency Widget whose Editor is open.
+    @Published var marketsEditorWidgetID: UUID? {
+        didSet { if marketsEditorWidgetID == nil { endTyping() } }
+    }
     /// A full-screen Editor is open, so horizontal swipes mustn't change pages.
-    var editorOpen: Bool { cityEditorWidgetID != nil || launcherEditorWidgetID != nil || timingEditorWidgetID != nil || ai.connectEditorOpen }
+    var editorOpen: Bool { cityEditorWidgetID != nil || launcherEditorWidgetID != nil || timingEditorWidgetID != nil || marketsEditorWidgetID != nil || ai.connectEditorOpen }
 
     /// A Ringing row on the Toast: stops it (a Pomodoro starts its next phase) and shows its Page.
     func acknowledgeRinging(_ id: UUID) {
         timing.acknowledge(id)
+        guard !plainDisplay, let index = pages.firstIndex(where: { $0.widgets.contains { $0.id == id } }) else { return }
+        showPage(index)
+    }
+
+    /// A row on the Alert Toast: stops the pulse and shows the Widget's Page.
+    func acknowledgeAlert(_ id: UUID) {
+        markets.acknowledge(id)
         guard !plainDisplay, let index = pages.firstIndex(where: { $0.widgets.contains { $0.id == id } }) else { return }
         showPage(index)
     }

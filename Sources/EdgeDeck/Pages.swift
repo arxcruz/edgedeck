@@ -189,6 +189,7 @@ struct WidgetEditChrome: View {
         case .worldClock, .weather: return { model.cityEditorWidgetID = id }
         case .ai: return { model.ai.connectEditorOpen = true }
         case .timer, .pomodoro: return { model.timingEditorWidgetID = id }
+        case .stocks, .currency: return { model.marketsEditorWidgetID = id }
         default: return nil
         }
     }
@@ -306,7 +307,9 @@ struct WidgetPalette: View {
                     Spacer()
                     TouchButton(symbol: "xmark", size: 44) { edit.showPalette = false }
                 }
-                HStack(spacing: 12) {
+                // Rows of ten, so every kind fits the window; more kinds than fit scroll.
+                ScrollView(.vertical, showsIndicators: false) {
+                LazyVGrid(columns: Array(repeating: GridItem(.fixed(128), spacing: 12), count: 10), spacing: 12) {
                     ForEach(WidgetKind.allCases) { type in
                         Button {
                             if model.addWidget(type) {
@@ -326,6 +329,8 @@ struct WidgetPalette: View {
                         .buttonStyle(PressableStyle())
                     }
                 }
+                }
+                .frame(maxHeight: 400)
             }
             .foregroundStyle(.white)
             .padding(22)

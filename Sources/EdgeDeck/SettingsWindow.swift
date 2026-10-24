@@ -1,5 +1,6 @@
 import AppKit
 import CoreGraphics
+import EdgeMarkets
 import ServiceManagement
 import SwiftUI
 
@@ -42,7 +43,7 @@ final class SettingsContext: ObservableObject {
 
 enum SettingsSection: String, CaseIterable, Identifiable {
     case general = "General", display = "Display", touch = "Touch", keyboard = "Keyboard"
-    case notifications = "Notifications"
+    case notifications = "Notifications", markets = "Markets"
     var id: String { rawValue }
     var symbol: String {
         switch self {
@@ -51,6 +52,7 @@ enum SettingsSection: String, CaseIterable, Identifiable {
         case .touch: "hand.tap"
         case .keyboard: "keyboard"
         case .notifications: "bell"
+        case .markets: "chart.line.uptrend.xyaxis"
         }
     }
 }
@@ -78,6 +80,7 @@ struct SettingsView: View {
                 case .touch: TouchPane(touch: model.touch)
                 case .keyboard: KeyboardPane(lender: model.keyboardLender)
                 case .notifications: NotificationsPane(configStore: model.configStore)
+                case .markets: MarketsPane(configStore: model.configStore)
                 }
             }
             .formStyle(.grouped)
@@ -260,6 +263,26 @@ private struct KeyboardPane: View {
         recording = false
         if let monitor { NSEvent.removeMonitor(monitor) }
         monitor = nil
+    }
+}
+
+private struct MarketsPane: View {
+    @ObservedObject var configStore: ConfigStore
+
+    var body: some View {
+        Form {
+            Section("Quotes") {
+                Picker("Update prices every", selection: Binding(
+                    get: { configStore.config.markets.refreshSeconds },
+                    set: { value in configStore.update { $0.markets.refreshSeconds = value } })) {
+                    ForEach(Cadence.choices, id: \.self) { seconds in
+                        Text(seconds < 60 ? "\(Int(seconds)) s" : "\(Int(seconds / 60)) min").tag(seconds)
+                    }
+                }
+                Text("Prices come from Yahoo Finance, so updating more often than needed can get EdgeDeck rate-limited. While every market followed is closed, updates slow to every 15 minutes. Tap a Widget's header to update it right now.")
+                    .foregroundStyle(.secondary)
+            }
+        }
     }
 }
 

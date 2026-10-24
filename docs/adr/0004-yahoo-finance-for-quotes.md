@@ -1,0 +1,5 @@
+# Quotes come from Yahoo Finance's public endpoints
+
+The Stocks and Currency Widgets get Symbol search and Quotes (stocks and currency pairs like `BRLEUR=X`) from Yahoo Finance's public, unofficial JSON endpoints. They need no account and no API key, which keeps EdgeDeck local-only and free to install.
+
+We chose this over Alpha Vantage, Finnhub and Twelve Data (official, but each needs a personal API key the user must sign up for and paste in, and their free limits are a few dozen requests a day), and over leaving Currency to a separate central-bank feed (a second source to maintain). The cost is that the endpoints are undocumented: Yahoo can change their shape, add a crumb requirement or rate-limit us without notice. So one shared feed fetches only the Symbols and Currency pairs on Widgets, every 5 minutes by default, and a failed or unparseable fetch keeps the last Quote and marks it stale instead of showing a wrong number. If Yahoo closes the door, the fix is confined to the one source file; swapping in a keyed provider changes nothing else.

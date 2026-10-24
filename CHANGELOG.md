@@ -5,6 +5,12 @@ What changed in each EdgeDeck release. Downloads are on the
 
 ## Unreleased
 
+- **Stocks** and **Currency** widgets: a Watchlist of Symbols with price and change on the day, and
+  the rate of one currency pair (Tap to flip BRL → EUR). Search and add Symbols in the widget's Editor.
+  Prices come from Yahoo Finance, every 5 minutes by default (**Settings → Markets**); tap a widget's
+  header to update it now. **Alerts**: a price level that makes the widget pulse and raises a Toast
+  once the price reaches it.
+
 - **Temperature** and **Fans** widgets: CPU and GPU temperature with a graph, and the speed of each
   fan. Tap Temperature to turn it over between °C and °F; each widget remembers its own side.
   They read the sensors only while one is on the current page.

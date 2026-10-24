@@ -77,6 +77,10 @@ struct DashboardView: View {
                 TimingEditor(widgetID: id)
             }
 
+            if let id = model.marketsEditorWidgetID, model.widget(id) != nil {
+                MarketsEditor(widgetID: id)
+            }
+
             if model.ai.connectEditorOpen {
                 ConnectEditor().environmentObject(model.ai)
             }
@@ -111,6 +115,10 @@ struct DashboardView: View {
                     RingingToastView(widgets: model.timing.toastRinging)
                         .transition(.move(edge: .top).combined(with: .opacity))
                 }
+                if !model.markets.toastPulsing.isEmpty {
+                    AlertToastView(widgets: model.markets.toastPulsing)
+                        .transition(.move(edge: .top).combined(with: .opacity))
+                }
                 if let session = model.ai.toastSessions.first {
                     AgentToastView(session: session, more: model.ai.toastSessions.count - 1)
                         .id(session.id)
@@ -140,11 +148,13 @@ struct DashboardView: View {
         .animation(.spring(response: 0.35, dampingFraction: 0.85), value: model.notifications.toast)
         .animation(.spring(response: 0.35, dampingFraction: 0.85), value: model.ai.toastSessions)
         .animation(.spring(response: 0.35, dampingFraction: 0.85), value: model.timing.toastRinging)
+        .animation(.spring(response: 0.35, dampingFraction: 0.85), value: model.markets.toastPulsing)
         .environmentObject(model.stats)
         .environmentObject(model.sensors)
         .environmentObject(model.runningApps)
         .environmentObject(model.nowPlaying)
         .environmentObject(model.weather)
+        .environmentObject(model.markets)
         .environmentObject(model.calendar)
         .environmentObject(model.music)
         .environmentObject(model.ai)
@@ -308,6 +318,11 @@ struct PlainDisplayToast: View {
                 .padding(AgentToastView.floatingMargin)
                 .fixedSize()
                 .preferredColorScheme(.dark)
+        } else if model.plainDisplay, !model.markets.toastPulsing.isEmpty {
+            AlertToastView(widgets: model.markets.toastPulsing, floating: true)
+                .padding(AgentToastView.floatingMargin)
+                .fixedSize()
+                .preferredColorScheme(.dark)
         } else if let session = model.ai.toastSessions.first {
             AgentToastView(session: session, more: model.ai.toastSessions.count - 1, floating: true)
                 .id(session.id)
@@ -391,6 +406,14 @@ struct Rail: View {
                 RailButton(title: count > 1 ? "\(count) ringing" : "\(widget.title ?? widget.kind.displayName) ringing",
                            symbol: "bell.and.waves.left.and.right.fill", tint: Theme.accent(for: widget.kind)) {
                     model.timing.acknowledge(widget.id)
+                }
+            }
+            // Stands in for the Alert Toast while the Dashboard is covered: a Tap stops the first pulse.
+            if let widget = model.markets.pulsing.first {
+                let count = model.markets.pulsing.count
+                RailButton(title: count > 1 ? "\(count) alerts" : "\(widget.title ?? widget.kind.displayName) alert",
+                           symbol: "bell.badge.fill", tint: Theme.accent(for: widget.kind)) {
+                    model.markets.acknowledge(widget.id)
                 }
             }
             Divider().overlay(Color.white.opacity(0.15))

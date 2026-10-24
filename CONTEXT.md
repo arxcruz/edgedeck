@@ -144,7 +144,7 @@ EdgeDeck's mirror of one macOS notification, as listed by the Notifications Widg
 _Avoid_: Alert, banner (for the mirror)
 
 **Toast**:
-The brief pop-up on the Edge announcing something that wants the user: a new Notification, a Session that Needs you, or a Timer or Pomodoro that is Ringing.
+The brief pop-up on the Edge announcing something that wants the user: a new Notification, a Session that Needs you, a Timer or Pomodoro that is Ringing, or an Alert that is Triggered.
 _Avoid_: Banner, popup, agent alert
 
 **Banner**:
@@ -222,6 +222,36 @@ _Avoid_: CPU fan, GPU fan, cooling
 A Tap on a Temperature Widget that turns it over, like a card, between Celsius and Fahrenheit. It applies to that Widget only and is remembered; a new Temperature Widget starts in Celsius. It is a change of view, not configuration, so it needs no Editor.
 _Avoid_: Unit setting, toggle
 
+### Markets
+
+**Symbol**:
+A tradable thing identified by its ticker (AAPL, PETR4.SA).
+_Avoid_: Ticker, stock (for the thing itself)
+
+**Quote**:
+The latest price of a Symbol or Currency pair, with its change on the day and how stale it is. A failed update keeps the last Quote and marks it stale; it never shows a wrong number.
+_Avoid_: Stock price, rate, tick
+
+**Stocks**:
+The Widget kind listing the Quotes of its Watchlist.
+_Avoid_: Ticker widget, portfolio
+
+**Watchlist**:
+The Symbols one Stocks Widget lists. Each Stocks Widget has its own; they are searched for and added in its Editor.
+_Avoid_: Portfolio, favourites
+
+**Currency**:
+The Widget kind showing the Quote of one Currency pair. Several Currency pairs means several Widgets.
+_Avoid_: Exchange widget, converter
+
+**Currency pair**:
+Two currencies, from → to (BRL → EUR), shown by one Currency Widget. A Tap flips it to EUR → BRL, a change of view that needs no Editor.
+_Avoid_: Pair (reserved for two Macs), rate, FX
+
+**Alert**:
+A price level on one Symbol or Currency pair, with a direction (rises to, falls to). It fires once, when the Quote crosses the level, and is then **Triggered** until re-armed in the Editor. A Widget with a Triggered Alert pulses and raises a Toast until the user Taps it.
+_Avoid_: Notification (that is a mirror of macOS), price target, ring
+
 ### AI agents
 
 **Agent tool**:
@@ -285,6 +315,7 @@ _Avoid_: Lend, capture, share the keyboard, keyboard forwarding
 - A **Launcher** has many **Buttons**; each **Button** has one **Action**.
 - A **Timer** or **Pomodoro** runs one countdown at a time and can have a title; a **Toast** lists every Widget that is **Ringing**.
 - A **Pomodoro** goes through **Cycles**; a **Cycle** has one or more **Rounds**; a **Round** is one **Work** then one **Break**. Neither phase starts until the user Taps.
+- A **Stocks** Widget has one **Watchlist** of **Symbols**; a **Currency** Widget has one **Currency pair**. Each **Symbol** or **Currency pair** has one **Quote** and any number of **Alerts**.
 - An **Agent tool** has one or more **Profiles**; a **Profile** has zero or more **Sessions**.
 - The **Edge** has one **Host** and shows one **Source** at a time; when they differ, it is a **Remote view**. Only **Paired** Macs can be a **Source** for each other.
 - The **Host** can **Grab the keyboard** of one **Paired** Mac at a time, only while a **Guest app** is on the Edge.
