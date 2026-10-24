@@ -27,6 +27,8 @@ enum Theme {
         case .ai: Color(hex: "#D97757")
         case .timer: Color(hex: "#FFB340")
         case .pomodoro: Color(hex: "#FF5E57")
+        case .stocks: Color(hex: "#34C759")
+        case .currency: Color(hex: "#5AC8FA")
         }
     }
 
@@ -43,12 +45,21 @@ extension Color {
     }
 }
 
+/// What a Markets Widget's Tile header needs to show and refresh its Quotes.
+struct TileRefresh {
+    var updated: Date?
+    var spinning: Bool
+    var action: () -> Void
+}
+
 struct Tile<Content: View>: View {
     let title: String
     let symbol: String
     let accent: Color
     /// Fill behind the content; the Weather widget passes `.clear` and draws its own sky.
     var background: Color = Theme.tile
+    /// Markets Widgets: the header shows when the Quotes were fetched, and a Tap on it fetches now.
+    var refresh: TileRefresh?
     @ViewBuilder var content: Content
 
     var body: some View {
@@ -56,9 +67,22 @@ struct Tile<Content: View>: View {
             HStack(spacing: 8) {
                 Image(systemName: symbol).foregroundStyle(accent)
                 Text(title.uppercased()).tracking(1.2)
+                if let refresh {
+                    Spacer(minLength: 8)
+                    TimelineView(.periodic(from: .now, by: 30)) { context in
+                        Text(refresh.updated.map { MarketFormat.ago($0, now: context.date) } ?? "")
+                    }
+                    Image(systemName: "arrow.clockwise")
+                        .opacity(refresh.spinning ? 0.35 : 1)
+                }
             }
             .font(.system(size: 15, weight: .semibold, design: .rounded))
             .foregroundStyle(Theme.secondaryText)
+            // A header-high strip is a small target for a finger, so the Tap area reaches past it.
+            .padding(.vertical, 10)
+            .contentShape(Rectangle())
+            .onTapGesture { refresh?.action() }
+            .padding(.vertical, -10)
             content.frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         }
         .padding(18)

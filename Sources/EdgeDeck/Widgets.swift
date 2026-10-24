@@ -24,6 +24,8 @@ struct WidgetView: View {
         case .ai: AIWidget(widget: widget)
         case .timer: TimerWidget(widget: widget)
         case .pomodoro: PomodoroWidget(widget: widget)
+        case .stocks: StocksWidget(widget: widget)
+        case .currency: CurrencyWidget(widget: widget)
         }
     }
 }

@@ -350,7 +350,7 @@ which is also live-reloaded when you edit it by hand:
 
 Widget types: `cpu`, `gpu`, `temperature`, `fans`, `memory`, `disk`, `network`,
 `notifications`, `launcher`, `runningApps`, `nowPlaying`, `worldClock`, `weather`,
-`calendar`, `music`, `ai`, `timer`, `pomodoro`. Older `clock` widgets become a World Clock showing
+`calendar`, `music`, `ai`, `timer`, `pomodoro`, `stocks`, `currency`. Older `clock` widgets become a World Clock showing
 the Local city, which looks the same. Older single-row configs are converted automatically (the original is kept
 as `config.v1-backup.json`).
 
@@ -458,6 +458,23 @@ MacBook Air.
 Both read the Mac's sensor chip (SMC) directly, with no extra access to grant, and only while one of
 them is on the current page. They are tested on Apple silicon; on a Mac whose sensors EdgeDeck can't
 find, the widget says **Unavailable** rather than guessing.
+
+## Stocks & Currency
+
+**Stocks** lists a Watchlist: each Symbol with its price and its change on the day (green or red).
+**Currency** shows the rate of one pair, say BRL → EUR; **Tap** it to flip the pair. In Edit mode, tap
+a Widget to open its Editor: in Stocks you search by name or ticker (type on the Mac keyboard) and add,
+remove and reorder Symbols; in Currency you pick the two currencies.
+
+Prices come from Yahoo Finance's public endpoints, with no account or key, and are fetched only for the
+Symbols and pairs on your Widgets. Prices are updated every 5 minutes by default (**Settings → Markets**:
+30 seconds to 15 minutes), and every 15 minutes while all the markets followed are closed. **Tap a
+Widget's header** to update it right now. If an update fails, the last price stays, dimmed.
+
+An **Alert** is a price level on a Symbol or a pair, either "rises to" or "falls to", set with the bell in
+the Editor. It fires once, when the price reaches the level: the Widget pulses and a Toast appears (on a
+Plain display or during a Takeover too) until you Tap it. Re-arm it in the Editor. An Alert is refused if
+the price is already past its level.
 
 ## Timer & Pomodoro
 

@@ -576,7 +576,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
         let remote = model.remoteHost.current != nil && model.remoteHost.pairingCode == nil
         let show = (model.plainDisplay || remote) && model.edgeConnected
             && (!model.ai.toastSessions.isEmpty || (remote && model.notifications.toast != nil)
-                || (model.plainDisplay && !model.timing.toastRinging.isEmpty))
+                || (model.plainDisplay && (!model.timing.toastRinging.isEmpty || !model.markets.toastPulsing.isEmpty)))
         guard show, let screen = targetScreen() else {
             if toastPanel.isVisible { toastPanel.orderOut(nil) }
             return

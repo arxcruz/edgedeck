@@ -1,7 +1,8 @@
+import EdgeMarkets
 import Foundation
 
 enum WidgetKind: String, Codable, CaseIterable, Identifiable {
-    case cpu, gpu, temperature, fans, memory, disk, network, notifications, launcher, runningApps, nowPlaying, worldClock, weather, calendar, music, ai, timer, pomodoro
+    case cpu, gpu, temperature, fans, memory, disk, network, notifications, launcher, runningApps, nowPlaying, worldClock, weather, calendar, music, ai, timer, pomodoro, stocks, currency
 
     var id: String { rawValue }
 
@@ -25,6 +26,8 @@ enum WidgetKind: String, Codable, CaseIterable, Identifiable {
         case .ai: "AI Agents"
         case .timer: "Timer"
         case .pomodoro: "Pomodoro"
+        case .stocks: "Stocks"
+        case .currency: "Currency"
         }
     }
 
@@ -48,6 +51,8 @@ enum WidgetKind: String, Codable, CaseIterable, Identifiable {
         case .ai: "sparkles"
         case .timer: "timer"
         case .pomodoro: "repeat.circle"
+        case .stocks: "chart.line.uptrend.xyaxis"
+        case .currency: "dollarsign.arrow.circlepath"
         }
     }
 
@@ -65,6 +70,8 @@ enum WidgetKind: String, Codable, CaseIterable, Identifiable {
         case .music: (14, 4)
         case .ai: (10, 4)
         case .timer, .pomodoro: (6, 2)
+        case .stocks: (3, 4)
+        case .currency: (3, 2)
         }
     }
 }
@@ -222,6 +229,10 @@ struct WidgetConfig: Codable, Hashable, Identifiable {
     var sound: String?
     /// Temperature only: show Fahrenheit. Absent means Celsius.
     var fahrenheit: Bool?
+    /// Stocks only: the Symbols it lists.
+    var watchlist: [WatchedSymbol]?
+    /// Currency only; nil means BRL → EUR.
+    var pair: CurrencyPair?
     /// Pre-pages configs sized widgets by relative width in a single row.
     var legacyWidth: Double?
 
@@ -234,12 +245,14 @@ struct WidgetConfig: Codable, Hashable, Identifiable {
         if kind == .worldClock { cities = City.defaults }
         if kind == .timer { presets = Self.defaultPresets }
         if kind == .pomodoro { pomodoro = PomodoroLengths() }
+        if kind == .stocks { watchlist = [] }
+        if kind == .currency { pair = CurrencyPair() }
     }
 
     static let defaultPresets = [1, 5, 10, 25]
 
     /// `zones` is the old name of `cities`; `location` the old form of `city`.
-    enum CodingKeys: String, CodingKey { case id, kind = "type", frame, title, buttons, cities, zones, city, location, calendars, days, presets, pomodoro, sound, fahrenheit, width }
+    enum CodingKeys: String, CodingKey { case id, kind = "type", frame, title, buttons, cities, zones, city, location, calendars, days, presets, pomodoro, sound, fahrenheit, watchlist, pair, width }
 
     init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
@@ -268,6 +281,8 @@ struct WidgetConfig: Codable, Hashable, Identifiable {
         pomodoro = try c.decodeIfPresent(PomodoroLengths.self, forKey: .pomodoro)
         sound = try c.decodeIfPresent(String.self, forKey: .sound)
         fahrenheit = try c.decodeIfPresent(Bool.self, forKey: .fahrenheit)
+        watchlist = try c.decodeIfPresent([WatchedSymbol].self, forKey: .watchlist)
+        pair = try c.decodeIfPresent(CurrencyPair.self, forKey: .pair)
         legacyWidth = try c.decodeIfPresent(Double.self, forKey: .width)
     }
 
@@ -286,6 +301,28 @@ struct WidgetConfig: Codable, Hashable, Identifiable {
         try c.encodeIfPresent(pomodoro, forKey: .pomodoro)
         try c.encodeIfPresent(sound, forKey: .sound)
         try c.encodeIfPresent(fahrenheit, forKey: .fahrenheit)
+        try c.encodeIfPresent(watchlist, forKey: .watchlist)
+        try c.encodeIfPresent(pair, forKey: .pair)
+    }
+}
+
+/// One Symbol on a Stocks Widget's Watchlist, with its Alert if it has one.
+struct WatchedSymbol: Codable, Hashable, Identifiable {
+    var ticker: String
+    var name: String
+    var alert: PriceAlert?
+    var id: String { ticker }
+}
+
+/// Markets: how often the shared feed asks for new Quotes.
+struct MarketSettings: Codable, Hashable {
+    var refreshSeconds: Double = Cadence.defaultSeconds
+
+    init() {}
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        refreshSeconds = max(30, try c.decodeIfPresent(Double.self, forKey: .refreshSeconds) ?? Cadence.defaultSeconds)
     }
 }
 
@@ -461,6 +498,7 @@ struct AppConfig: Codable, Hashable {
     var display = DisplaySettings()
     var notifications = NotificationSettings()
     var ai = AISettings()
+    var markets = MarketSettings()
     var pages: [PageConfig] = []
     /// Set when the file was in the single-page format and got converted.
     private(set) var migrated = false
@@ -471,13 +509,14 @@ struct AppConfig: Codable, Hashable {
         self.pages = pages
     }
 
-    enum CodingKeys: String, CodingKey { case display, notifications, ai, pages, widgets }
+    enum CodingKeys: String, CodingKey { case display, notifications, ai, markets, pages, widgets }
 
     init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         display = try c.decodeIfPresent(DisplaySettings.self, forKey: .display) ?? DisplaySettings()
         notifications = try c.decodeIfPresent(NotificationSettings.self, forKey: .notifications) ?? NotificationSettings()
         ai = try c.decodeIfPresent(AISettings.self, forKey: .ai) ?? AISettings()
+        markets = try c.decodeIfPresent(MarketSettings.self, forKey: .markets) ?? MarketSettings()
         pages = try c.decodeIfPresent([PageConfig].self, forKey: .pages) ?? []
         if let legacy = try c.decodeIfPresent([WidgetConfig].self, forKey: .widgets) {
             pages.insert(PageConfig(widgets: legacy), at: 0)
@@ -491,6 +530,7 @@ struct AppConfig: Codable, Hashable {
         try c.encode(display, forKey: .display)
         try c.encode(notifications, forKey: .notifications)
         if ai != AISettings() { try c.encode(ai, forKey: .ai) }
+        if markets != MarketSettings() { try c.encode(markets, forKey: .markets) }
         try c.encode(pages, forKey: .pages)
     }
 

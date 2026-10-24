@@ -7,7 +7,7 @@ let package = Package(
     targets: [
         .executableTarget(
             name: "EdgeDeck",
-            dependencies: ["EdgeTouch", "EdgeDisplay", "EdgeSensors"],
+            dependencies: ["EdgeTouch", "EdgeDisplay", "EdgeSensors", "EdgeMarkets"],
             path: "Sources/EdgeDeck",
             linkerSettings: [.linkedFramework("IOKit"), .linkedFramework("ApplicationServices"), .linkedLibrary("sqlite3")]
         ),
@@ -20,6 +20,9 @@ let package = Package(
         // Temperature units, heat levels and fan readings (pure, unit-tested).
         .target(name: "EdgeSensors", path: "Sources/EdgeSensors"),
         .testTarget(name: "EdgeSensorsTests", dependencies: ["EdgeSensors"], path: "Tests/EdgeSensorsTests"),
+        // Alerts, Currency pairs, Quotes and Yahoo Finance parsing (pure, unit-tested).
+        .target(name: "EdgeMarkets", path: "Sources/EdgeMarkets"),
+        .testTarget(name: "EdgeMarketsTests", dependencies: ["EdgeMarkets"], path: "Tests/EdgeMarketsTests"),
         // Hardware exploration: dumps the touch controller's HID descriptors and raw reports.
         .executableTarget(name: "touch-probe", path: "Sources/touch-probe"),
     ]
