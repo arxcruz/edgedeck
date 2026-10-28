@@ -446,6 +446,13 @@ The first time, tap **Allow Calendar Access** on the widget. Optional settings:
 `days` is how many days to show starting today (1–7, default 2); `calendars`
 limits it to those calendar names (all by default).
 
+## CPU
+
+**Tap** the CPU widget to flip to the five processes using the most CPU. Each row shows the
+process name, CPU percentage, and RAM use. The first reading starts when you tap; the back shows
+**Measuring…** until it can calculate CPU use. It refreshes every two seconds while that face is
+on the current page, and stops when you flip back or leave the page. Returning shows the CPU face.
+
 ## Temperature & Fans
 
 **Temperature** shows the hottest CPU and the hottest GPU sensor, with a graph of the last two
