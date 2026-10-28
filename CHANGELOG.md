@@ -5,6 +5,15 @@ What changed in each EdgeDeck release. Downloads are on the
 
 ## Unreleased
 
+- **Codex** and **Antigravity** in the **AI Agents** widget: connect them from the Connect view and
+  their sessions show beside Claude and OpenCode, with their 5-hour and weekly quotas. Choose how
+  quotas show under **Quota layout** in the widget's Editor: together with the sessions, on
+  separate **Sessions** / **Quotas** buttons, or **Tap to flip** the whole widget. Claude's plan
+  usage now disappears when the saved reading is over an hour old, instead of showing a wrong one.
+
+- **CPU** widget: tap it to flip to the five processes using the most CPU, with their CPU and RAM
+  use. It measures every two seconds only while that side is showing on the current page.
+
 - **Stocks** and **Currency** widgets: a Watchlist of Symbols with price and change on the day, and
   the rate of one currency pair (Tap to flip BRL → EUR). Search and add Symbols in the widget's Editor.
   Prices come from Yahoo Finance, every 5 minutes by default (**Settings → Markets**); tap a widget's

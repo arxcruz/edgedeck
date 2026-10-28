@@ -1,4 +1,5 @@
 import AppKit
+import EdgeAgents
 import SwiftUI
 
 private final class AIQuotaPageState: ObservableObject {

@@ -1,15 +1,5 @@
 import AppKit
-
-struct AgentQuotaWindow: Equatable {
-    let label: String
-    let used: Double
-    let resets: Date?
-}
-
-struct AgentQuotaUsage: Equatable {
-    let name: String
-    let windows: [AgentQuotaWindow]
-}
+import EdgeAgents
 
 /// The two agents use different hook schemas, but both can report conversation metadata
 /// without exposing prompts or transcript content to EdgeDeck.
@@ -253,71 +243,13 @@ enum AdditionalAgentConnection {
     }
 }
 
-struct AdditionalAgentEvent {
-    let id: String
-    let event: String
-    let date: Date
-    let cwd: String
-    let tool: String?
-    let transcript: String
-    let pid: pid_t?
-
-    init?(_ row: [String: Any]) {
-        guard let id = row["id"] as? String, let event = row["event"] as? String,
-              let timestamp = row["ts"] as? Double else { return nil }
-        self.id = id
-        self.event = event
-        date = Date(timeIntervalSince1970: timestamp)
-        cwd = row["cwd"] as? String ?? ""
-        tool = row["tool"] as? String
-        transcript = row["transcript"] as? String ?? ""
-        pid = (row["pid"] as? NSNumber)?.int32Value
-    }
-}
-
 enum AdditionalAgentReader {
     static func antigravityQuota(now: Date = Date()) -> [AgentQuotaUsage] {
         let url = AdditionalAgentConnection.statuslineSnapshot
         guard let modified = try? url.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate,
-              now.timeIntervalSince(modified) < 3600,
-              let bytes = try? Data(contentsOf: url),
-              let json = (try? JSONSerialization.jsonObject(with: bytes)) as? [String: Any],
-              let buckets = json["quota"] as? [String: Any] else { return [] }
-        let formatter = ISO8601DateFormatter()
-        var grouped: [String: [AgentQuotaWindow]] = [:]
-        for key in buckets.keys.sorted() {
-            guard let bucket = buckets[key] as? [String: Any],
-                  bucket["disabled"] as? Bool != true,
-                  let remaining = (bucket["remaining_fraction"] as? NSNumber)?.doubleValue,
-                  (0...1).contains(remaining) else { continue }
-            let reset = (bucket["reset_time"] as? String).flatMap(formatter.date(from:))
-            if let reset, reset <= now { continue }
-            let base: String
-            let label: String
-            if key.hasSuffix("-5h") {
-                base = String(key.dropLast(3)); label = "5h"
-            } else if key.hasSuffix("-weekly") {
-                base = String(key.dropLast(7)); label = "Week"
-            } else { continue }
-            let name: String = switch base {
-            case "gemini": "Gemini"
-            case "gemini-argon-wtu": "Argon"
-            case "3p": "Other"
-            default: base.replacingOccurrences(of: "-", with: " ").capitalized
-            }
-            grouped[name, default: []].append(AgentQuotaWindow(label: label, used: (1 - remaining) * 100, resets: reset))
-        }
-        let order = ["Gemini", "Argon", "Other"]
-        return grouped.map { AgentQuotaUsage(name: $0.key, windows: $0.value.sorted { $0.label == "5h" && $1.label != "5h" }) }
-            .sorted { (order.firstIndex(of: $0.name) ?? 99, $0.name) < (order.firstIndex(of: $1.name) ?? 99, $1.name) }
-    }
-
-    struct CodexRollout {
-        let id: String
-        let cwd: String
-        let updated: Date
-        let state: AgentState
-        let quota: AgentQuotaUsage?
+              now.timeIntervalSince(modified) < quotaSnapshotLifetime,
+              let bytes = try? Data(contentsOf: url) else { return [] }
+        return AntigravityQuota.parse(bytes, now: now)
     }
 
     /// Codex writes rollout files even for conversations that began before Connect.
@@ -335,7 +267,7 @@ enum AdditionalAgentReader {
             let files = (try? fm.contentsOfDirectory(at: folder, includingPropertiesForKeys: [.contentModificationDateKey])) ?? []
             for url in files where url.pathExtension == "jsonl" {
                 guard let modified = try? url.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate,
-                      now.timeIntervalSince(modified) < 3600,
+                      now.timeIntervalSince(modified) < quotaSnapshotLifetime,
                       let handle = try? FileHandle(forReadingFrom: url) else { continue }
                 defer { try? handle.close() }
                 var head = Data()
@@ -344,57 +276,19 @@ enum AdditionalAgentReader {
                     if chunk.isEmpty { break }
                     head.append(chunk)
                 }
-                guard let first = head.split(separator: 0x0A).first,
-                      let metadata = (try? JSONSerialization.jsonObject(with: Data(first))) as? [String: Any],
-                      let payload = metadata["payload"] as? [String: Any],
-                      let id = payload["id"] as? String,
-                      let cwd = payload["cwd"] as? String else { continue }
                 let size = handle.seekToEndOfFile()
                 handle.seek(toFileOffset: size > 262_144 ? size - 262_144 : 0)
                 let tail = handle.readDataToEndOfFile()
-                let lines = String(decoding: tail, as: UTF8.self).split(separator: "\n")
-                var state: AgentState = .thinking
-                var foundState = false
-                var quota: AgentQuotaUsage?
-                for line in lines.reversed() {
-                    guard let row = (try? JSONSerialization.jsonObject(with: Data(line.utf8))) as? [String: Any],
-                          row["type"] as? String == "event_msg",
-                          let event = row["payload"] as? [String: Any],
-                          let type = event["type"] as? String else { continue }
-                    if !foundState && type == "task_complete" { state = .idle; foundState = true }
-                    if !foundState && type == "task_started" { state = .thinking; foundState = true }
-                    if quota == nil && type == "token_count", let limits = event["rate_limits"] as? [String: Any] {
-                        var windows: [AgentQuotaWindow] = []
-                        for (key, label, minutes) in [("primary", "5h", 300), ("secondary", "Week", 10_080)] {
-                            guard let bucket = limits[key] as? [String: Any],
-                                  let duration = bucket["window_minutes"] as? Int, duration == minutes,
-                                  let percent = (bucket["used_percent"] as? NSNumber)?.doubleValue,
-                                  (0...100).contains(percent) else { continue }
-                            let reset = (bucket["resets_at"] as? NSNumber).map { Date(timeIntervalSince1970: $0.doubleValue) }
-                            if let reset, reset <= now { continue }
-                            windows.append(AgentQuotaWindow(label: label, used: percent, resets: reset))
-                        }
-                        if !windows.isEmpty { quota = AgentQuotaUsage(name: "Codex", windows: windows) }
-                    }
-                    if foundState && quota != nil { break }
-                }
-                let rollout = CodexRollout(id: id, cwd: cwd, updated: modified, state: state, quota: quota)
-                if found[id].map({ $0.updated < modified }) ?? true { found[id] = rollout }
+                guard let rollout = CodexRollout.parse(head: head, tail: tail, modified: modified, now: now) else { continue }
+                if found[rollout.id].map({ $0.updated < modified }) ?? true { found[rollout.id] = rollout }
             }
         }
         return Array(found.values)
     }
 
-    static func events(_ kind: AdditionalAgentConnection.Kind) -> [AdditionalAgentEvent] {
+    static func events(_ kind: AdditionalAgentConnection.Kind) -> [AgentEvent] {
         guard let bytes = try? Data(contentsOf: AdditionalAgentConnection.events(kind)),
               let content = String(data: bytes.suffix(2_000_000), encoding: .utf8) else { return [] }
-        var latest: [String: AdditionalAgentEvent] = [:]
-        for line in content.split(separator: "\n") {
-            guard let data = line.data(using: .utf8),
-                  let row = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any],
-                  let event = AdditionalAgentEvent(row) else { continue }
-            if latest[event.id].map({ $0.date < event.date }) ?? true { latest[event.id] = event }
-        }
-        return Array(latest.values)
+        return AgentEvent.latest(in: content)
     }
 }
