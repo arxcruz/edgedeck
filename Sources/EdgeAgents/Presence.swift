@@ -58,8 +58,9 @@ public enum AgentPresence {
     }
 
     /// Nil when the conversation is over. A hook event is alive when the process that sent it still runs the
-    /// agent, when a terminal process of the agent is in the event's folder, or, for the desktop app, when
-    /// the app runs and the event is recent.
+    /// agent in a terminal, when a terminal process of the agent is in the event's folder, or, for the
+    /// desktop app, when the app runs and the event is recent. A sender with no terminal doesn't count by
+    /// itself: Codex's background server outlives the app and would keep every conversation alive.
     public static func resolve(_ event: AgentEvent, kind: AgentKind, desktopAppRunning: Bool,
                                probe: ProcessProbe, now: Date) -> Found? {
         let owner = event.pid.flatMap { candidate -> Int32? in
@@ -74,7 +75,7 @@ public enum AgentPresence {
             } : nil)
         let desktopAlive = kind == .codex ? desktopAppRunning
             : (!event.transcript.contains("/antigravity-cli/") && desktopAppRunning)
-        guard owner != nil || pid != nil || (desktopAlive && now.timeIntervalSince(event.date) < desktopGrace) else { return nil }
+        guard pid != nil || (desktopAlive && now.timeIntervalSince(event.date) < desktopGrace) else { return nil }
         return Found(pid: pid)
     }
 
