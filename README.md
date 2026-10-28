@@ -533,6 +533,24 @@ the widget unless you tap **Open Music**.
 
 ## AI Agents
 
+**Codex and Antigravity:** The Connect editor can install local hooks for Codex
+CLI/desktop and Google Antigravity App/IDE/CLI. Their active conversations then
+appear as Sessions with project and state. Codex conversations already running
+when Connect is enabled are found from their local rollout files; new hook events
+add detailed state. Codex permission hooks can raise a
+**Needs you** Toast; Antigravity does not currently expose a dedicated permission
+event, so its tool activity does not raise one. Sessions disappear when their
+owning process or desktop app closes. Tapping a row selects
+the matching terminal when found, or activates the desktop app. Connect preserves
+other hooks in `~/.codex/hooks.json` and `~/.gemini/config/hooks.json` and backs up
+either file before changing it; Disconnect removes only EdgeDeck's hooks.
+Codex's recent local rollout records can also supply five-hour and weekly plan
+usage. For Antigravity CLI, Connect wraps the existing statusline command and
+records only its quota fields, preserving its output; available quota buckets
+are grouped by model with five-hour and weekly bars. Usage disappears when its
+local snapshot is stale or its reset window has passed. The Antigravity App and
+IDE do not currently feed this quota row.
+
 `ai` shows your local AI coding agents live: every running **Claude Code** session
 (in all profiles — `~/.claude` and any `~/.claude-*`, e.g. `.claude-work` /
 `.claude-personal` used via `CLAUDE_CONFIG_DIR` aliases) and every **OpenCode**
@@ -545,6 +563,12 @@ and OpenCode's tokens/replies today. **Show cost** (in the widget's editor, off 
 default) adds each session's cost so far to its row — for Claude Code an estimate at
 API prices (≈, connected profiles only), for OpenCode what it records — and today's
 cost to OpenCode's row. Everything is read from files on this Mac.
+The editor's **Quota layout** offers **Together** (sessions and quotas in one
+view), **Separate** (Sessions/Quotas buttons), and **Tap to flip** (tap the card
+to turn between the two faces with the same animation as CPU and Temperature).
+Claude usage bars appear only while the local statusline snapshot is recent and
+its reset window has not passed; an old snapshot is hidden until Claude reports
+fresh usage.
 
 Out of the box you get busy/idle (Claude Code's own session files) and OpenCode's
 state from its local database. For plan usage and tool-level detail, tap

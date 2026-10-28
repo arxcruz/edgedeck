@@ -468,6 +468,17 @@ struct DisplaySettings: Codable, Hashable {
     }
 }
 
+enum AIQuotaPresentation: String, Codable, Hashable {
+    case inline
+    case split
+    case tapToFlip
+
+    init(from decoder: Decoder) throws {
+        let value = try decoder.singleValueContainer().decode(String.self)
+        self = value == "flip" ? .split : (AIQuotaPresentation(rawValue: value) ?? .inline)
+    }
+}
+
 struct AISettings: Codable, Hashable {
     /// Claude Code config folders (CLAUDE_CONFIG_DIR) beyond the ones found on their own
     /// (~/.claude, ~/.claude-*): added in the Editor, by hand, or learned from running Sessions.
@@ -480,6 +491,8 @@ struct AISettings: Codable, Hashable {
     var toastOnNeedsYou = true
     /// Each Session row shows its cost so far (Claude: an API-price estimate).
     var showCost = false
+    /// Together, separated by buttons, or switched by tapping the widget header.
+    var quotaPresentation: AIQuotaPresentation = .inline
 
     init() {}
 
@@ -491,6 +504,7 @@ struct AISettings: Codable, Hashable {
         opencodeDatabase = try c.decodeIfPresent(String.self, forKey: .opencodeDatabase)
         toastOnNeedsYou = try c.decodeIfPresent(Bool.self, forKey: .toastOnNeedsYou) ?? d.toastOnNeedsYou
         showCost = try c.decodeIfPresent(Bool.self, forKey: .showCost) ?? d.showCost
+        quotaPresentation = try c.decodeIfPresent(AIQuotaPresentation.self, forKey: .quotaPresentation) ?? d.quotaPresentation
     }
 }
 
