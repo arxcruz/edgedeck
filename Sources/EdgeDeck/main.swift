@@ -607,6 +607,14 @@ if ProcessInfo.processInfo.environment["EDGEDECK_AI_DUMP"] == "1" {
     ai.start()
     RunLoop.main.run(until: Date().addingTimeInterval(4))
     print("opencode plugin: \(ai.openCodeStatus.map { "\($0)" } ?? "OpenCode not installed")")
+    for usage in ai.claudeUsage {
+        let five = usage.fiveHour.map { String($0) } ?? "-"
+        let week = usage.sevenDay.map { String($0) } ?? "-"
+        print("claude usage: \(usage.profile) 5h=\(five) week=\(week)")
+    }
+    for quota in [ai.codexQuota].compactMap({ $0 }) + ai.antigravityQuotas {
+        print("\(quota.name.lowercased()) quota: " + quota.windows.map { "\($0.label)=\(Int($0.used.rounded()))" }.joined(separator: " "))
+    }
     for s in ai.sessions {
         print([s.tool.rawValue, s.profile ?? "-", s.project, s.title ?? "-", s.agent ?? "-", s.state.label,
                "\(s.state)", "cost \(s.cost.map { String(format: "%.2f", $0) } ?? "-")", "pid \(s.pid.map(String.init) ?? "-")", "terminal \(ai.terminal(of: s)?.localizedName ?? "-")"].joined(separator: " | "))

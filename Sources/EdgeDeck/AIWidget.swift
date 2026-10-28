@@ -1,12 +1,17 @@
 import AppKit
 import SwiftUI
 
-/// Live Claude Code / OpenCode sessions with their state, plus Claude plan limits
-/// and OpenCode's usage today.
+private final class AIQuotaPageState: ObservableObject {
+    @Published var showingQuotas = ProcessInfo.processInfo.environment["EDGEDECK_SNAPSHOT_AI_QUOTAS"] == "1"
+    @Published var angle: Double = ProcessInfo.processInfo.environment["EDGEDECK_SNAPSHOT_AI_QUOTAS"] == "1" ? 180 : 0
+}
+
+/// Live coding agent sessions, plus available local usage summaries.
 struct AIWidget: View {
     @EnvironmentObject var model: AppModel
     @EnvironmentObject var ai: AIModel
     let widget: WidgetConfig
+    @StateObject private var quotaPage = AIQuotaPageState()
 
     private let rowHeight: CGFloat = 64
     private let spacing: CGFloat = 8
@@ -15,17 +20,91 @@ struct AIWidget: View {
         model.currentPage.widgets.contains { $0.id == widget.id } && model.guest.current == nil && !model.player.isOpen
     }
 
+    private var hasUsage: Bool {
+        !ai.claudeUsage.isEmpty || (ai.openCodeUsage?.messages ?? 0) > 0 ||
+        ai.codexQuota != nil || !ai.antigravityQuotas.isEmpty
+    }
+
+    private var tapToFlip: Bool {
+        model.config.ai.quotaPresentation == .tapToFlip && hasUsage
+    }
+
     var body: some View {
-        Tile(title: widget.title ?? "AI Agents", symbol: WidgetKind.ai.symbol, accent: Theme.accent(for: .ai)) {
-            VStack(spacing: 10) {
-                if ai.needsConnect && !ai.profiles.isEmpty { connectBanner }
-                if !ai.claudeUsage.isEmpty || (ai.openCodeUsage?.messages ?? 0) > 0 { usage }
-                sessions
+        Group {
+            if tapToFlip {
+                FlipCard(angle: quotaPage.angle, front: sessionsFace, back: quotasFace)
+                    .contentShape(Rectangle())
+                    .onTapGesture {
+                        quotaPage.showingQuotas.toggle()
+                        withAnimation(.easeInOut(duration: 0.4)) { quotaPage.angle += 180 }
+                    }
+            } else {
+                standardFace
             }
         }
         .onAppear { ai.setVisible(widget.id, visible) }
         .onChange(of: visible) { _, now in ai.setVisible(widget.id, now) }
+        .onChange(of: model.config.ai.quotaPresentation) { _, _ in
+            quotaPage.angle = quotaPage.showingQuotas ? 180 : 0
+        }
         .onDisappear { ai.setVisible(widget.id, false) }
+    }
+
+    private var standardFace: some View {
+        Tile(title: widget.title ?? "AI Agents", symbol: WidgetKind.ai.symbol, accent: Theme.accent(for: .ai)) {
+            VStack(spacing: 10) {
+                if ai.needsConnect && !ai.profiles.isEmpty { connectBanner }
+                if model.config.ai.quotaPresentation == .split && hasUsage {
+                    viewPicker
+                    if quotaPage.showingQuotas {
+                        ScrollView { usage }
+                            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+                    } else { sessions }
+                } else {
+                    if hasUsage { usage }
+                    sessions
+                }
+            }
+        }
+    }
+
+    private var sessionsFace: some View {
+        Tile(title: widget.title ?? "AI Agents", symbol: WidgetKind.ai.symbol, accent: Theme.accent(for: .ai)) {
+            VStack(spacing: 10) {
+                if ai.needsConnect && !ai.profiles.isEmpty { connectBanner }
+                sessions
+            }
+        }
+    }
+
+    private var quotasFace: some View {
+        Tile(title: "AI Quotas", symbol: "chart.bar.fill", accent: Theme.accent(for: .ai)) {
+            ScrollView { usage }
+        }
+    }
+
+    private var viewPicker: some View {
+        HStack(spacing: 8) {
+            viewChoice("Sessions", symbol: "rectangle.stack.fill", selected: !quotaPage.showingQuotas) {
+                quotaPage.showingQuotas = false
+            }
+            viewChoice("Quotas", symbol: "chart.bar.fill", selected: quotaPage.showingQuotas) {
+                quotaPage.showingQuotas = true
+            }
+            Spacer(minLength: 0)
+        }
+    }
+
+    private func viewChoice(_ title: String, symbol: String, selected: Bool, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Label(title, systemImage: symbol)
+                .font(.system(size: 13, weight: .bold, design: .rounded))
+                .foregroundStyle(selected ? Color.black : Color.white)
+                .padding(.horizontal, 13)
+                .frame(height: 34)
+                .background(selected ? Theme.accent(for: .ai) : Theme.tileRaised, in: Capsule())
+        }
+        .buttonStyle(PressableStyle())
     }
 
     private var connectBanner: some View {
@@ -76,10 +155,28 @@ struct AIWidget: View {
                     Spacer(minLength: 0)
                 }
             }
+            if let quota = ai.codexQuota { quotaRow(quota) }
+            ForEach(ai.antigravityQuotas, id: \.name) { quota in quotaRow(quota) }
         }
         .foregroundStyle(.white)
         .padding(10)
         .background(Theme.tileRaised.opacity(0.6), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+    }
+
+    private func quotaRow(_ quota: AgentQuotaUsage) -> some View {
+        HStack(spacing: 10) {
+            Text(quota.name == "Codex" ? "Cx" : "Ag")
+                .font(.system(size: 11, weight: .heavy, design: .rounded))
+                .frame(width: 22, height: 22)
+                .background(Theme.tile, in: RoundedRectangle(cornerRadius: 5))
+            Text(quota.name)
+                .font(.system(size: 14, weight: .bold, design: .rounded))
+                .frame(width: 74, alignment: .leading)
+                .lineLimit(1)
+            ForEach(quota.windows, id: \.label) { window in
+                LimitBar(label: window.label, percent: window.used, resets: window.resets)
+            }
+        }
     }
 
     @ViewBuilder
@@ -88,7 +185,7 @@ struct AIWidget: View {
             VStack(spacing: 8) {
                 Image(systemName: "sparkles").font(.system(size: 30))
                 Text("No agents running").font(.system(size: 16, weight: .medium, design: .rounded))
-                Text("Claude Code and OpenCode sessions show up here").font(.system(size: 13, design: .rounded))
+                Text("Claude, OpenCode, Codex and Antigravity sessions show up here").font(.system(size: 13, design: .rounded))
             }
             .foregroundStyle(Theme.secondaryText)
             .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -160,8 +257,13 @@ private struct AgentRow: View {
                 Group {
                     if session.tool == .claude {
                         AppIcon(image: AppLocator.icon(for: "com.anthropic.claudefordesktop"), size: 36)
-                    } else {
+                    } else if session.tool == .opencode {
                         OpenCodeIcon(size: 36)
+                    } else {
+                        Text(session.tool == .codex ? "Cx" : "Ag")
+                            .font(.system(size: 15, weight: .heavy, design: .rounded))
+                            .frame(width: 36, height: 36)
+                            .background(Theme.tile, in: RoundedRectangle(cornerRadius: 9))
                     }
                 }
                 VStack(alignment: .leading, spacing: 3) {
@@ -221,7 +323,15 @@ private struct AgentRow: View {
             // Claude on a plan isn't billed per token: its cost is an estimate at API prices.
             parts.append((session.tool == .claude ? "≈" : "") + String(format: "$%.2f", cost))
         }
-        if parts.isEmpty { parts.append(session.tool == .claude ? "Claude Code" : "OpenCode") }
+        if parts.isEmpty {
+            let label = switch session.tool {
+            case .claude: "Claude Code"
+            case .opencode: "OpenCode"
+            case .codex: "Codex"
+            case .antigravity: "Antigravity"
+            }
+            parts.append(label)
+        }
         return parts.joined(separator: " · ")
     }
 
@@ -254,8 +364,7 @@ private struct OpenCodeIcon: View {
 
 // MARK: Connect editor
 
-/// Full-screen: every Claude profile found and OpenCode, what's installed in each, and
-/// connect / disconnect buttons.
+/// Full-screen agent connections and their connect / disconnect controls.
 struct ConnectEditor: View {
     @EnvironmentObject var model: AppModel
     @EnvironmentObject var ai: AIModel
@@ -265,7 +374,7 @@ struct ConnectEditor: View {
             HStack(spacing: 12) {
                 Image(systemName: WidgetKind.ai.symbol).foregroundStyle(Theme.accent(for: .ai))
                 Text("Connect agents").font(.system(size: 20, weight: .bold, design: .rounded))
-                Text("Claude Code: adds EdgeDeck's statusline + hooks to each profile's settings.json (backed up first). OpenCode: adds a small plugin. Nothing leaves this Mac.")
+                Text("Connect local agent hooks for live Session details. Existing settings are backed up. Nothing leaves this Mac.")
                     .font(.system(size: 13, weight: .medium, design: .rounded))
                     .foregroundStyle(Theme.secondaryText)
                     .lineLimit(2)
@@ -310,6 +419,23 @@ struct ConnectEditor: View {
                     ProfileCard(profile: profile, status: ai.connectionStatus[profile.key])
                 }
                 if let status = ai.openCodeStatus { OpenCodeCard(status: status) }
+                ForEach(AdditionalAgentConnection.Kind.allCases, id: \.self) { kind in
+                    if let connected = ai.additionalStatus[kind] {
+                        HStack(spacing: 14) {
+                            Text(kind == .codex ? "Codex" : "Antigravity")
+                                .font(.system(size: 17, weight: .bold, design: .rounded))
+                            Text(connected ? "Connected" : "Hooks available")
+                                .foregroundStyle(Theme.secondaryText)
+                            Spacer()
+                            Button(connected ? "Disconnect" : "Connect") {
+                                if connected { ai.disconnectAdditional(kind) } else { ai.connectAdditional(kind) }
+                            }
+                            .buttonStyle(PressableStyle())
+                        }
+                        .padding(18)
+                        .background(Theme.tileRaised, in: RoundedRectangle(cornerRadius: 14))
+                    }
+                }
             }
 
             if !ai.hiddenProfiles.isEmpty {
@@ -334,6 +460,7 @@ struct ConnectEditor: View {
 
             toastSetting
             costSetting
+            quotaPresentationSetting
 
             if let message = ai.connectionMessage {
                 Text(message)
@@ -354,7 +481,7 @@ struct ConnectEditor: View {
 
     private var toastSetting: some View {
         setting(on: model.config.ai.toastOnNeedsYou, symbol: AgentState.needsYou(nil).symbol, color: AgentState.needsYou(nil).color,
-                title: "Toast when a Session needs you", detail: "Claude Code profiles and OpenCode must be connected for this.") {
+                title: "Toast when a Session needs you", detail: "Requires a connected agent and a reliable permission signal.") {
             $0.ai.toastOnNeedsYou.toggle()
         }
     }
@@ -364,6 +491,42 @@ struct ConnectEditor: View {
                 title: "Show cost", detail: "Each Session's cost so far. Claude's (≈) is an estimate at API prices; connected profiles only.") {
             $0.ai.showCost.toggle()
         }
+    }
+
+    private var quotaPresentationSetting: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Label("Quota layout", systemImage: "rectangle.on.rectangle")
+                .font(.system(size: 17, weight: .bold, design: .rounded))
+            HStack(spacing: 8) {
+                quotaOption(.inline, title: "Together", detail: "Sessions + quotas")
+                quotaOption(.split, title: "Separate", detail: "Switch with buttons")
+                quotaOption(.tapToFlip, title: "Tap to flip", detail: "Flip whole widget")
+            }
+        }
+        .padding(14)
+        .frame(maxWidth: 560, alignment: .leading)
+        .background(Theme.tileRaised, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+    }
+
+    private func quotaOption(_ mode: AIQuotaPresentation, title: String, detail: String) -> some View {
+        let selected = model.config.ai.quotaPresentation == mode
+        return Button {
+            model.configStore.update { $0.ai.quotaPresentation = mode }
+        } label: {
+            VStack(alignment: .leading, spacing: 3) {
+                Text(title).font(.system(size: 14, weight: .bold, design: .rounded))
+                Text(detail).font(.system(size: 11, weight: .medium, design: .rounded))
+                    .foregroundStyle(selected ? Color.black.opacity(0.65) : Theme.secondaryText)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.8)
+            }
+            .foregroundStyle(selected ? .black : .white)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(10)
+            .background(selected ? Theme.accent(for: .ai) : Theme.tile, in: RoundedRectangle(cornerRadius: 10))
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(PressableStyle())
     }
 
     private func setting(on: Bool, symbol: String, color: String, title: String, detail: String,

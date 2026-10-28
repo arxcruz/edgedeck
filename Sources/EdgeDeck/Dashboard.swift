@@ -248,7 +248,7 @@ struct AgentToastView: View {
                 .frame(width: 56, height: 56)
                 .background(color.opacity(0.18), in: Circle())
             VStack(alignment: .leading, spacing: 4) {
-                Text([session.tool == .claude ? "Claude" : "OpenCode", session.profile].compactMap { $0 }.joined(separator: " · "))
+                Text([session.tool.rawValue.capitalized, session.profile].compactMap { $0 }.joined(separator: " · "))
                     .font(.system(size: 14, weight: .heavy, design: .rounded))
                     .foregroundStyle(color)
                 Text(detail)
@@ -264,7 +264,7 @@ struct AgentToastView: View {
             Spacer(minLength: 0)
             // Bring to Edge: answer it here when the Mac's own screen isn't in front of you.
             // Not from a Remote view: this Mac (the Source) has no Edge to bring it to.
-            if !model.remoteSource.isWatched {
+            if !model.remoteSource.isWatched && session.pid != nil && session.tool == .claude {
             Button { model.bringToEdge(session) } label: {
                 Label("Bring to Edge", systemImage: "rectangle.portrait.and.arrow.right")
                     .font(.system(size: 17, weight: .semibold, design: .rounded))

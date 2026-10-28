@@ -51,7 +51,7 @@ enum AgentState: Equatable {
 }
 
 struct AgentSession: Identifiable, Equatable {
-    enum Tool: String { case claude, opencode }
+    enum Tool: String { case claude, opencode, codex, antigravity }
 
     let id: String
     let tool: Tool
@@ -451,12 +451,15 @@ final class AIModel: ObservableObject {
     @Published private(set) var sessions: [AgentSession] = []
     @Published private(set) var claudeUsage: [ClaudeUsage] = []
     @Published private(set) var openCodeUsage: OpenCodeUsage?
+    @Published private(set) var codexQuota: AgentQuotaUsage?
+    @Published private(set) var antigravityQuotas: [AgentQuotaUsage] = []
     @Published private(set) var profiles: [ClaudeProfile] = []
     /// Profiles the user hid; listed in the Editor so they can be shown again.
     @Published private(set) var hiddenProfiles: [ClaudeProfile] = []
     @Published private(set) var connectionStatus: [String: ClaudeConnection.Status] = [:]
     /// Nil while OpenCode isn't installed.
     @Published private(set) var openCodeStatus: OpenCodeConnection.Status?
+    @Published private(set) var additionalStatus: [AdditionalAgentConnection.Kind: Bool] = [:]
     @Published var connectionMessage: String?
     /// The full-screen Connect Claude Code view is showing.
     @Published var connectEditorOpen = false
@@ -559,6 +562,8 @@ final class AIModel: ObservableObject {
         (profiles, hiddenProfiles) = ClaudeProfile.discover(extra: settings.claudeDirs ?? [], hidden: settings.hiddenClaudeDirs)
         connectionStatus = Dictionary(uniqueKeysWithValues: (profiles + hiddenProfiles).map { ($0.key, ClaudeConnection.status($0)) })
         openCodeStatus = OpenCodeConnection.isInstalled(database: openCodeDatabase) ? OpenCodeConnection.status() : nil
+        additionalStatus = Dictionary(uniqueKeysWithValues: AdditionalAgentConnection.Kind.allCases
+            .filter(AdditionalAgentConnection.installed).map { ($0, AdditionalAgentConnection.connected($0)) })
         if fileWatch != nil { watchFiles() }
     }
 
@@ -571,10 +576,11 @@ final class AIModel: ObservableObject {
             FSEventStreamRelease(stream)
         }
         let openCodeEvents = OpenCodeConnection.eventsURL.deletingLastPathComponent()
-        for dir in [ClaudeConnection.dataRoot, openCodeEvents] {
+        for dir in [ClaudeConnection.dataRoot, openCodeEvents, AdditionalAgentConnection.root] {
             try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         }
-        let paths = ([ClaudeConnection.dataRoot.path, openCodeEvents.path, (openCodeDatabase as NSString).deletingLastPathComponent]
+        let paths = ([ClaudeConnection.dataRoot.path, openCodeEvents.path, AdditionalAgentConnection.root.path,
+                      (openCodeDatabase as NSString).deletingLastPathComponent]
                      + profiles.map(\.sessionsDirectory.path))
             .filter { FileManager.default.fileExists(atPath: $0) }
         var context = FSEventStreamContext(version: 0, info: Unmanaged.passUnretained(self).toOpaque(), retain: nil, release: nil, copyDescription: nil)
@@ -611,6 +617,18 @@ final class AIModel: ObservableObject {
         refreshProfiles()
     }
 
+    func connectAdditional(_ kind: AdditionalAgentConnection.Kind) {
+        do { connectionMessage = try AdditionalAgentConnection.connect(kind) }
+        catch { connectionMessage = "Couldn't connect \(kind.rawValue): \(error.localizedDescription)" }
+        refreshProfiles()
+    }
+
+    func disconnectAdditional(_ kind: AdditionalAgentConnection.Kind) {
+        do { connectionMessage = try AdditionalAgentConnection.disconnect(kind) }
+        catch { connectionMessage = "Couldn't disconnect \(kind.rawValue): \(error.localizedDescription)" }
+        refreshProfiles()
+    }
+
     private var openCodeDatabase: String {
         settings.opencodeDatabase.map { ($0 as NSString).expandingTildeInPath }
             ?? FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".local/share/opencode/opencode.db").path
@@ -641,7 +659,21 @@ final class AIModel: ObservableObject {
 
     /// Brings the terminal running a session forward.
     func focus(_ session: AgentSession) {
-        guard let app = terminal(of: session) else { return showMessage("Couldn't find the terminal running this session") }
+        let app: NSRunningApplication?
+        if session.pid != nil, let terminal = terminal(of: session) {
+            terminal.activate()
+            selectTerminalTab(of: session)
+            return
+        }
+        switch session.tool {
+        case .codex:
+            app = NSRunningApplication.runningApplications(withBundleIdentifier: "com.openai.codex").first
+        case .antigravity:
+            app = NSWorkspace.shared.runningApplications.first { $0.localizedName?.lowercased().contains("antigravity") == true }
+        default:
+            app = terminal(of: session)
+        }
+        guard let app else { return showMessage("Couldn't find the app running this session") }
         app.activate()
     }
 
@@ -772,6 +804,57 @@ final class AIModel: ObservableObject {
                              state: s.state, since: self.since("oc:" + s.id, s.state, fallback: s.updated), pid: s.pid,
                              contextPercent: nil, agent: s.agent, cost: s.cost)
             }
+            let now = Date()
+            let codexAppRunning = !NSRunningApplication.runningApplications(withBundleIdentifier: "com.openai.codex").isEmpty
+            let antigravityAppRunning = !NSRunningApplication.runningApplications(withBundleIdentifier: "com.google.antigravity").isEmpty
+            for kind in AdditionalAgentConnection.Kind.allCases {
+                for event in AdditionalAgentReader.events(kind) where event.event != "SessionEnd" {
+                    let tool: AgentSession.Tool = kind == .codex ? .codex : .antigravity
+                    let state: AgentState = switch event.event {
+                    case "Stop", "Interrupt": .idle
+                    case "PermissionRequest": .needsYou(event.tool)
+                    case "PreToolUse": .running(event.tool ?? "")
+                    default: .thinking
+                    }
+                    let id = "\(kind.rawValue):\(event.id)"
+                    let candidates = kind == .codex ? ["codex"] : ["agy", "antigravity", "antigravity-cli"]
+                    let ownerPID = event.pid.flatMap { candidate -> pid_t? in
+                        guard kill(candidate, 0) == 0 || errno == EPERM else { return nil }
+                        let name = Self.processName(candidate).lowercased()
+                        return candidates.contains(where: name.contains) ? candidate : nil
+                    }
+                    let pid = ownerPID.flatMap { Self.tty(of: $0) != nil ? $0 : nil } ??
+                        (event.pid == nil ? candidates.flatMap(Self.pids(named:)).first {
+                            Self.tty(of: $0) != nil && Self.workingDirectory(of: $0) == event.cwd
+                        } : nil)
+                    let ownerAlive = ownerPID != nil
+                    let desktopAlive = kind == .codex ? codexAppRunning :
+                        (!event.transcript.contains("/antigravity-cli/") && antigravityAppRunning)
+                    guard ownerAlive || pid != nil || (desktopAlive && now.timeIntervalSince(event.date) < 300) else { continue }
+                    sessions.append(AgentSession(id: id, tool: tool, profile: nil,
+                                                 project: (event.cwd as NSString).lastPathComponent,
+                                                 title: nil, state: state,
+                                                 since: self.since(id, state, fallback: event.date),
+                                                 pid: pid, contextPercent: nil))
+                }
+            }
+            let codexIDs = Set(sessions.filter { $0.tool == .codex }.map(\.id))
+            let rollouts = AdditionalAgentReader.codexRollouts(now: now)
+            let codexQuota = rollouts.sorted { $0.updated > $1.updated }.compactMap(\.quota).first
+            let antigravityQuotas = AdditionalAgentReader.antigravityQuota(now: now)
+            for rollout in rollouts where now.timeIntervalSince(rollout.updated) < 300 {
+                let id = "codex:\(rollout.id)"
+                guard !codexIDs.contains(id) else { continue }
+                let cliPID = Self.pids(named: "codex").first {
+                    Self.tty(of: $0) != nil && Self.workingDirectory(of: $0) == rollout.cwd
+                }
+                guard codexAppRunning || cliPID != nil else { continue }
+                sessions.append(AgentSession(id: id, tool: .codex, profile: nil,
+                                             project: (rollout.cwd as NSString).lastPathComponent,
+                                             title: nil, state: rollout.state,
+                                             since: self.since(id, rollout.state, fallback: rollout.updated),
+                                             pid: cliPID, contextPercent: nil))
+            }
             // Busy sessions first, then the most recently changed.
             sessions.sort { ($0.state.isActive ? 0 : 1, -$0.since.timeIntervalSince1970) < ($1.state.isActive ? 0 : 1, -$1.since.timeIntervalSince1970) }
             DispatchQueue.main.async {
@@ -781,6 +864,8 @@ final class AIModel: ObservableObject {
                 if !self.dismissedToasts.isSubset(of: current) { self.dismissedToasts.formIntersection(current) }
                 if usage != self.claudeUsage { self.claudeUsage = usage }
                 if ocUsage != self.openCodeUsage { self.openCodeUsage = ocUsage }
+                if codexQuota != self.codexQuota { self.codexQuota = codexQuota }
+                if antigravityQuotas != self.antigravityQuotas { self.antigravityQuotas = antigravityQuotas }
             }
         }
     }
@@ -944,13 +1029,21 @@ final class AIModel: ObservableObject {
             costBySession[session] = cost
         }
         let limits = json["rate_limits"] as? [String: Any] ?? [:]
+        let modified = (try? url.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate) ?? .distantPast
+        let now = Date()
+        // The bridge only receives a new usage snapshot while Claude is active. A saved
+        // percentage can be wrong after a reset or usage in another Claude session/device.
+        let recent = now.timeIntervalSince(modified) < 3600
         func window(_ key: String) -> (Double?, Date?) {
             let w = limits[key] as? [String: Any] ?? [:]
-            return ((w["used_percentage"] as? NSNumber)?.doubleValue, Self.date(w["resets_at"] ?? w["reset_at"] ?? w["resets"]))
+            let reset = Self.date(w["resets_at"] ?? w["reset_at"] ?? w["resets"])
+            guard let used = (w["used_percentage"] as? NSNumber)?.doubleValue,
+                  (0...100).contains(used),
+                  recent, (reset.map { $0 > now } ?? true) else { return (nil, nil) }
+            return (used, reset)
         }
         let five = window("five_hour"), seven = window("seven_day")
         guard five.0 != nil || seven.0 != nil else { return nil }
-        let modified = (try? url.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate) ?? Date()
         return ClaudeUsage(profile: profile.name, fiveHour: five.0, fiveHourResets: five.1, sevenDay: seven.0, sevenDayResets: seven.1, updated: modified)
     }
 

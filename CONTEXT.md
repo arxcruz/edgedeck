@@ -263,7 +263,7 @@ One configuration of an Agent tool with its own state directory (Claude Code: `~
 _Avoid_: Account, config dir
 
 **Session**:
-One running conversation of an Agent tool within a Profile, which is always Busy, Idle or Needs you. It exists only while its process is alive; there is no "ended" state.
+One live conversation of an Agent tool within a Profile, which is always Busy, Idle or Needs you. A terminal Session exists while its process is alive. A desktop Session exists while its conversation is active, ending on a reliable end signal, app closure, or five minutes without an event when neither signal is available. Conversation history is not a live Session.
 _Avoid_: Agent, process, chat
 
 **OpenCode agent**:
