@@ -6,7 +6,7 @@ struct WidgetView: View {
 
     var body: some View {
         switch widget.kind {
-        case .cpu: CPUWidget()
+        case .cpu: CPUWidget(widget: widget)
         case .gpu: GPUWidget()
         case .temperature: TemperatureWidget(widget: widget)
         case .fans: FansWidget()
@@ -32,8 +32,42 @@ struct WidgetView: View {
 
 struct CPUWidget: View {
     @EnvironmentObject var stats: StatsSampler
+    @EnvironmentObject var model: AppModel
+    @StateObject private var processes = TopProcesses()
+    let widget: WidgetConfig
+    @State private var angle = 0.0
+    @State private var showingProcesses = false
+
+    private var onCurrentPage: Bool { model.currentPage.widgets.contains { $0.id == widget.id } }
 
     var body: some View {
+        FlipCard(angle: angle, front: cpuFace, back: processFace)
+            .contentShape(Rectangle())
+            .onTapGesture {
+                guard onCurrentPage else { return }
+                if showingProcesses {
+                    processes.stop()
+                } else {
+                    processes.start()
+                }
+                showingProcesses.toggle()
+                withAnimation(.easeInOut(duration: 0.4)) { angle += 180 }
+            }
+            .onChange(of: model.currentPageIndex) { _, _ in
+                if showingProcesses && !onCurrentPage {
+                    processes.stop()
+                    showingProcesses = false
+                    angle = 0
+                }
+            }
+            .onDisappear {
+                processes.stop()
+                showingProcesses = false
+                angle = 0
+            }
+    }
+
+    private var cpuFace: some View {
         Tile(title: "CPU", symbol: WidgetKind.cpu.symbol, accent: Theme.accent(for: .cpu)) {
             VStack(alignment: .leading, spacing: 10) {
                 BigValue(text: String(format: "%.0f", stats.cpu * 100), unit: "%")
@@ -52,6 +86,31 @@ struct CPUWidget: View {
                     }
                 }
                 .frame(height: 34)
+            }
+        }
+    }
+
+    private var processFace: some View {
+        Tile(title: "Top Processes", symbol: WidgetKind.cpu.symbol, accent: Theme.accent(for: .cpu)) {
+            if processes.measuring {
+                Text("Measuring…").foregroundStyle(Theme.secondaryText)
+            } else if processes.rows.isEmpty {
+                Text("No processes available").foregroundStyle(Theme.secondaryText)
+            } else {
+                VStack(alignment: .leading, spacing: 7) {
+                    ForEach(processes.rows) { process in
+                        HStack(spacing: 6) {
+                            Text(process.name).lineLimit(1).truncationMode(.middle)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                            Text(String(format: "%.0f%%", process.cpu))
+                                .monospacedDigit()
+                            Text(Format.bytes(Double(process.memory)))
+                                .monospacedDigit()
+                                .foregroundStyle(Theme.secondaryText)
+                        }
+                        .font(.system(size: 12, weight: .medium, design: .rounded))
+                    }
+                }
             }
         }
     }
