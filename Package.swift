@@ -7,7 +7,7 @@ let package = Package(
     targets: [
         .executableTarget(
             name: "EdgeDeck",
-            dependencies: ["EdgeTouch", "EdgeDisplay", "EdgeSensors", "EdgeMarkets"],
+            dependencies: ["EdgeTouch", "EdgeDisplay", "EdgeSensors", "EdgeMarkets", "EdgeAgents"],
             path: "Sources/EdgeDeck",
             linkerSettings: [.linkedFramework("IOKit"), .linkedFramework("ApplicationServices"), .linkedLibrary("sqlite3")]
         ),
@@ -23,6 +23,9 @@ let package = Package(
         // Alerts, Currency pairs, Quotes and Yahoo Finance parsing (pure, unit-tested).
         .target(name: "EdgeMarkets", path: "Sources/EdgeMarkets"),
         .testTarget(name: "EdgeMarketsTests", dependencies: ["EdgeMarkets"], path: "Tests/EdgeMarketsTests"),
+        // Quota and event parsing for the Codex and Antigravity agents (pure, unit-tested).
+        .target(name: "EdgeAgents", path: "Sources/EdgeAgents"),
+        .testTarget(name: "EdgeAgentsTests", dependencies: ["EdgeAgents"], path: "Tests/EdgeAgentsTests"),
         // Hardware exploration: dumps the touch controller's HID descriptors and raw reports.
         .executableTarget(name: "touch-probe", path: "Sources/touch-probe"),
     ]

@@ -1,4 +1,5 @@
 import AppKit
+import EdgeAgents
 import SQLite3
 
 // Live state of local AI coding agents — Claude Code (every profile / CLAUDE_CONFIG_DIR)
@@ -807,53 +808,35 @@ final class AIModel: ObservableObject {
             let now = Date()
             let codexAppRunning = !NSRunningApplication.runningApplications(withBundleIdentifier: "com.openai.codex").isEmpty
             let antigravityAppRunning = !NSRunningApplication.runningApplications(withBundleIdentifier: "com.google.antigravity").isEmpty
-            for kind in AdditionalAgentConnection.Kind.allCases {
-                for event in AdditionalAgentReader.events(kind) where event.event != "SessionEnd" {
-                    let tool: AgentSession.Tool = kind == .codex ? .codex : .antigravity
-                    let state: AgentState = switch event.event {
-                    case "Stop", "Interrupt": .idle
-                    case "PermissionRequest": .needsYou(event.tool)
-                    case "PreToolUse": .running(event.tool ?? "")
-                    default: .thinking
-                    }
+            let probe = Self.processProbe
+            for connection in AdditionalAgentConnection.Kind.allCases {
+                let kind = AgentKind(rawValue: connection.rawValue)!
+                for event in AdditionalAgentReader.events(connection) where event.event != "SessionEnd" {
+                    guard let found = AgentPresence.resolve(event, kind: kind, desktopAppRunning: kind == .codex ? codexAppRunning : antigravityAppRunning,
+                                                            probe: probe, now: now) else { continue }
+                    let state = Self.agentState(event.state)
                     let id = "\(kind.rawValue):\(event.id)"
-                    let candidates = kind == .codex ? ["codex"] : ["agy", "antigravity", "antigravity-cli"]
-                    let ownerPID = event.pid.flatMap { candidate -> pid_t? in
-                        guard kill(candidate, 0) == 0 || errno == EPERM else { return nil }
-                        let name = Self.processName(candidate).lowercased()
-                        return candidates.contains(where: name.contains) ? candidate : nil
-                    }
-                    let pid = ownerPID.flatMap { Self.tty(of: $0) != nil ? $0 : nil } ??
-                        (event.pid == nil ? candidates.flatMap(Self.pids(named:)).first {
-                            Self.tty(of: $0) != nil && Self.workingDirectory(of: $0) == event.cwd
-                        } : nil)
-                    let ownerAlive = ownerPID != nil
-                    let desktopAlive = kind == .codex ? codexAppRunning :
-                        (!event.transcript.contains("/antigravity-cli/") && antigravityAppRunning)
-                    guard ownerAlive || pid != nil || (desktopAlive && now.timeIntervalSince(event.date) < 300) else { continue }
-                    sessions.append(AgentSession(id: id, tool: tool, profile: nil,
+                    sessions.append(AgentSession(id: id, tool: kind == .codex ? .codex : .antigravity, profile: nil,
                                                  project: (event.cwd as NSString).lastPathComponent,
                                                  title: nil, state: state,
                                                  since: self.since(id, state, fallback: event.date),
-                                                 pid: pid, contextPercent: nil))
+                                                 pid: found.pid, contextPercent: nil))
                 }
             }
             let codexIDs = Set(sessions.filter { $0.tool == .codex }.map(\.id))
             let rollouts = AdditionalAgentReader.codexRollouts(now: now)
             let codexQuota = rollouts.sorted { $0.updated > $1.updated }.compactMap(\.quota).first
             let antigravityQuotas = AdditionalAgentReader.antigravityQuota(now: now)
-            for rollout in rollouts where now.timeIntervalSince(rollout.updated) < 300 {
+            for rollout in rollouts {
                 let id = "codex:\(rollout.id)"
-                guard !codexIDs.contains(id) else { continue }
-                let cliPID = Self.pids(named: "codex").first {
-                    Self.tty(of: $0) != nil && Self.workingDirectory(of: $0) == rollout.cwd
-                }
-                guard codexAppRunning || cliPID != nil else { continue }
+                guard !codexIDs.contains(id),
+                      let found = AgentPresence.resolve(rollout, desktopAppRunning: codexAppRunning, probe: probe, now: now) else { continue }
+                let state: AgentState = rollout.state == .idle ? .idle : .thinking
                 sessions.append(AgentSession(id: id, tool: .codex, profile: nil,
                                              project: (rollout.cwd as NSString).lastPathComponent,
-                                             title: nil, state: rollout.state,
-                                             since: self.since(id, rollout.state, fallback: rollout.updated),
-                                             pid: cliPID, contextPercent: nil))
+                                             title: nil, state: state,
+                                             since: self.since(id, state, fallback: rollout.updated),
+                                             pid: found.pid, contextPercent: nil))
             }
             // Busy sessions first, then the most recently changed.
             sessions.sort { ($0.state.isActive ? 0 : 1, -$0.since.timeIntervalSince1970) < ($1.state.isActive ? 0 : 1, -$1.since.timeIntervalSince1970) }
@@ -867,6 +850,23 @@ final class AIModel: ObservableObject {
                 if codexQuota != self.codexQuota { self.codexQuota = codexQuota }
                 if antigravityQuotas != self.antigravityQuotas { self.antigravityQuotas = antigravityQuotas }
             }
+        }
+    }
+
+    /// The system's answers to the questions the agents' liveness checks ask.
+    private static let processProbe = ProcessProbe(
+        isAlive: { kill($0, 0) == 0 || errno == EPERM },
+        name: { processName($0) },
+        hasTerminal: { tty(of: $0) != nil },
+        workingDirectory: { workingDirectory(of: $0) },
+        pids: { pids(named: $0) })
+
+    private static func agentState(_ state: HookState) -> AgentState {
+        switch state {
+        case .idle: .idle
+        case .thinking: .thinking
+        case .running(let tool): .running(tool)
+        case .needsYou(let tool): .needsYou(tool)
         }
     }
 
@@ -1031,16 +1031,11 @@ final class AIModel: ObservableObject {
         let limits = json["rate_limits"] as? [String: Any] ?? [:]
         let modified = (try? url.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate) ?? .distantPast
         let now = Date()
-        // The bridge only receives a new usage snapshot while Claude is active. A saved
-        // percentage can be wrong after a reset or usage in another Claude session/device.
-        let recent = now.timeIntervalSince(modified) < 3600
         func window(_ key: String) -> (Double?, Date?) {
             let w = limits[key] as? [String: Any] ?? [:]
             let reset = Self.date(w["resets_at"] ?? w["reset_at"] ?? w["resets"])
-            guard let used = (w["used_percentage"] as? NSNumber)?.doubleValue,
-                  (0...100).contains(used),
-                  recent, (reset.map { $0 > now } ?? true) else { return (nil, nil) }
-            return (used, reset)
+            let trusted = trustedClaudeWindow(used: (w["used_percentage"] as? NSNumber)?.doubleValue, resets: reset, modified: modified, now: now)
+            return (trusted?.used, trusted?.resets)
         }
         let five = window("five_hour"), seven = window("seven_day")
         guard five.0 != nil || seven.0 != nil else { return nil }
