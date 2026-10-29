@@ -62,10 +62,17 @@ final class PresenceTests: XCTestCase {
         XCTAssertNil(AgentPresence.resolve(event(pid: 10), kind: .codex, desktopAppRunning: false, probe: probe([:]), now: now))
     }
 
-    func testSenderWithoutATerminalCountsAsAliveButHasNoPid() {
-        let found = AgentPresence.resolve(event(pid: 10), kind: .codex, desktopAppRunning: false,
-                                          probe: probe([Int32(10): Process(name: "codex", terminal: false)]), now: now)
-        XCTAssertEqual(found, AgentPresence.Found(pid: nil))
+    func testSenderWithoutATerminalIsNotAliveByItself() {
+        // Codex's background app-server keeps running after the app quits.
+        let daemon = probe([Int32(10): Process(name: "codex", terminal: false)])
+        XCTAssertNil(AgentPresence.resolve(event(pid: 10), kind: .codex, desktopAppRunning: false, probe: daemon, now: now))
+    }
+
+    func testSenderWithoutATerminalLivesWhileTheDesktopAppRunsAndTheEventIsRecent() {
+        let daemon = probe([Int32(10): Process(name: "codex", terminal: false)])
+        XCTAssertEqual(AgentPresence.resolve(event(age: 10, pid: 10), kind: .codex, desktopAppRunning: true, probe: daemon, now: now),
+                       AgentPresence.Found(pid: nil))
+        XCTAssertNil(AgentPresence.resolve(event(age: 400, pid: 10), kind: .codex, desktopAppRunning: true, probe: daemon, now: now))
     }
 
     func testEventWithoutPidFindsTheTerminalAgentInItsFolder() {
