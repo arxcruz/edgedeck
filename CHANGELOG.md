@@ -5,6 +5,9 @@ What changed in each EdgeDeck release. Downloads are on the
 
 ## Unreleased
 
+- **Fix:** connecting and then disconnecting **Codex** or **Antigravity** within the same second
+  no longer fails with "file exists" (the backup of their settings file got the same name).
+
 - **Clearer message when another Mac can't be reached:** Grab keyboard and Remote view now say
   whether the connection was blocked on the network (Wi-Fi that keeps devices apart, a VPN or a
   firewall), refused, or unanswered, instead of only asking if EdgeDeck is running there. The
