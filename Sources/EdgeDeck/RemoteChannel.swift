@@ -1,5 +1,6 @@
 import CryptoKit
 import Foundation
+import EdgeLink
 import Network
 import Security
 
@@ -118,6 +119,14 @@ final class RemoteChannel {
     private var sendCounter: UInt64 = 0
     private var receiveCounter: UInt64 = 0
     private var closed = false
+    private var connectFailure: ConnectFailure?
+
+    /// Why the connection couldn't be made, once the system has said.
+    var failure: ConnectFailure? {
+        lock.lock()
+        defer { lock.unlock() }
+        return connectFailure
+    }
 
     init(_ connection: NWConnection) {
         self.connection = connection
@@ -126,12 +135,25 @@ final class RemoteChannel {
     func start() {
         connection.stateUpdateHandler = { [weak self] state in
             switch state {
-            case .failed, .cancelled: self?.close()
+            case .waiting(let error):
+                // Network keeps retrying a connection it can't make; remember why for the message.
+                self?.note(error)
+            case .failed(let error):
+                self?.note(error)
+                self?.close()
+            case .cancelled: self?.close()
             default: break
             }
         }
         receive()
         connection.start(queue: .main)
+    }
+
+    private func note(_ error: NWError) {
+        guard case .posix(let code) = error else { return }
+        lock.lock()
+        connectFailure = ConnectFailure(errno: code.rawValue)
+        lock.unlock()
     }
 
     func close() {

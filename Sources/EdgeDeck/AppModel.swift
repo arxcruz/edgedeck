@@ -114,8 +114,8 @@ final class AppModel: ObservableObject {
             .sink { [weak self] _ in DispatchQueue.main.async { self?.finishAnswering() } }
             .store(in: &cancellables)
 
-        remoteHost.onProblem = { [weak self] text in self?.flashPlayerMessage(text) }
-        keyboard.onProblem = { [weak self] text in self?.flashPlayerMessage(text) }
+        remoteHost.onProblem = { [weak self] text in self?.flashPlayerMessage(text, seconds: 8) }
+        keyboard.onProblem = { [weak self] text in self?.flashPlayerMessage(text, seconds: 8) }
         keyboard.onGrabbed = { [weak self] in self?.guest.activate() }
         remoteHost.beforeConnect = { [weak self] name, proceed in
             self?.explainKeychain(for: name, proceed: proceed) {
@@ -440,9 +440,9 @@ final class AppModel: ObservableObject {
         }
     }
 
-    func flashPlayerMessage(_ text: String) {
+    func flashPlayerMessage(_ text: String, seconds: Double = 3) {
         playerMessage = text
-        DispatchQueue.main.asyncAfter(deadline: .now() + 3) { [weak self] in
+        DispatchQueue.main.asyncAfter(deadline: .now() + seconds) { [weak self] in
             if self?.playerMessage == text { self?.playerMessage = nil }
         }
     }

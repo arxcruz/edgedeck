@@ -2,6 +2,7 @@ import AppKit
 import AVFoundation
 import CoreMedia
 import CryptoKit
+import EdgeLink
 import IOKit.pwr_mgt
 import Network
 import ScreenCaptureKit
@@ -90,7 +91,8 @@ final class RemoteHost: ObservableObject {
         }
         channel.onClose = { [weak self, weak channel] in
             guard let self, let channel, self.channel === channel else { return }
-            self.lose(self.pairingCode != nil ? "Wrong code, or Pairing was cancelled on \(name)" : "\(name) went away")
+            self.lose(self.pairingCode != nil ? "Wrong code, or Pairing was cancelled on \(name)"
+                      : channel.failure?.message(for: name) ?? "\(name) went away")
         }
         channel.start()
         var hello = Data([RemoteWire.version])
@@ -158,7 +160,8 @@ final class RemoteHost: ObservableObject {
         } else if !readingSecret, Date().timeIntervalSince(lastHeard) > (pairingCode != nil || waitingForSource ? 120 : 5), let name = current {
             lose(pairingCode != nil ? "Pairing with \(name) timed out"
                  : waitingForSource ? "\(name) is still asking for a password: answer it there, then choose \(name) again"
-                 : "Couldn't reach \(name): is EdgeDeck running there? If it's asking for a password or a code, answer it and try again")
+                 : channel?.failure?.message(for: name)
+                    ?? "Couldn't reach \(name): is EdgeDeck running there? If it's asking for a password or a code, answer it and try again")
         }
     }
 

@@ -5,6 +5,11 @@ What changed in each EdgeDeck release. Downloads are on the
 
 ## Unreleased
 
+- **Clearer message when another Mac can't be reached:** Grab keyboard and Remote view now say
+  whether the connection was blocked on the network (Wi-Fi that keeps devices apart, a VPN or a
+  firewall), refused, or unanswered, instead of only asking if EdgeDeck is running there. The
+  message stays up for 8 seconds instead of 3.
+
 - **Codex** and **Antigravity** in the **AI Agents** widget: connect them from the Connect view and
   their sessions show beside Claude and OpenCode, with their 5-hour and weekly quotas. Choose how
   quotas show under **Quota layout** in the widget's Editor: together with the sessions, on
