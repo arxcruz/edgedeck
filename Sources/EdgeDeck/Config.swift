@@ -1,3 +1,4 @@
+import EdgeAgents
 import EdgeMarkets
 import Foundation
 
@@ -465,17 +466,6 @@ struct DisplaySettings: Codable, Hashable {
         let legacy = try decoder.container(keyedBy: LegacyKeys.self)
         railWidth = try c.decodeIfPresent(Double.self, forKey: .railWidth)
             ?? legacy.decodeIfPresent(Double.self, forKey: .dockRailWidth) ?? d.railWidth
-    }
-}
-
-enum AIQuotaPresentation: String, Codable, Hashable {
-    case inline
-    case split
-    case tapToFlip
-
-    init(from decoder: Decoder) throws {
-        let value = try decoder.singleValueContainer().decode(String.self)
-        self = value == "flip" ? .split : (AIQuotaPresentation(rawValue: value) ?? .inline)
     }
 }
 

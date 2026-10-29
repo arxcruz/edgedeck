@@ -335,7 +335,7 @@ enum ClaudeConnection {
         try FileManager.default.copyItem(at: profile.settingsURL, to: target)
     }
 
-    static func shellQuote(_ s: String) -> String { "'" + s.replacingOccurrences(of: "'", with: "'\\''") + "'" }
+    static func shellQuote(_ s: String) -> String { Shell.quote(s) }
 
     /// Splits a command made of `shellQuote`d words (plus bare words) back into words.
     static func shellWords(_ command: String) -> [String] {
