@@ -304,6 +304,23 @@ Mac's keyboard** while an app is on the Edge:
   Accessibility permission there; while a password field is active on it, macOS hides the
   keys from every app and the strip says **Keyboard paused**.
 
+### If another Mac shows up but won't connect
+
+Finding a Mac and connecting to it are different steps: the Mac is found over Bonjour
+(multicast), but the connection itself is ordinary traffic that Wi-Fi, a VPN or a firewall can
+block. When that happens the Edge says why for a few seconds, for Remote view and for Grab
+keyboard alike:
+
+- **Can't connect over the network**: no route to the Mac. Check that both are on the same
+  Wi-Fi (not a guest network, and the router isn't set to keep devices apart), and that a VPN or
+  overlay network such as NetBird isn't catching local traffic. `ping` the other Mac's IP address
+  from this one to tell.
+- **Refused the connection**: the Mac answered but EdgeDeck isn't listening there, or its
+  firewall rejects it. Open EdgeDeck on that Mac and allow it in the firewall.
+- **Didn't answer**: usually a firewall or VPN dropping the connection.
+- Both Macs also need EdgeDeck's **Local Network** permission (System Settings → Privacy &
+  Security → Local Network).
+
 `EDGEDECK_REMOTE_STATS=1` on the Source logs frames per second, encoding time and bit
 rate. `EDGEDECK_REMOTE_NAME=<name>` renames a Mac on the network (for running a second
 copy as a test Source on one Mac, with `EDGEDECK_NO_EDGE=1`), and
@@ -738,13 +755,11 @@ Ideas I may get to, in no particular order:
 
 - **Vertical display**: support the Edge mounted upright (portrait), with the
   Dashboard, Pages and touch laid out for it.
-- **Settings window**: a window on the Mac's main screen for the global settings that
-  today live only in `config.json` (notifications, display, AI Profiles, …).
 - **Calendar editor**: choose calendars and how many days to show from the Edge,
   instead of `config.json`.
 - **City labels**: give World Clock Cities your own names from the City editor.
-- **More AI agents**: other coding agents, such as Antigravity or Codex, in the AI
-  Agents widget.
+- **More AI agents**: coding agents beyond Claude Code, OpenCode, Codex and Antigravity in
+  the AI Agents widget.
 - **Now Playing**: a volume slider and ±15 s skip buttons.
 - **Widget themes**: choose a background colour or theme for each Widget, in its Editor.
 - **Analog faces**: show Timer, Pomodoro and World Clock as an analog dial instead of digits.
