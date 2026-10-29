@@ -1,6 +1,7 @@
 import AppKit
 import Carbon.HIToolbox
 import CryptoKit
+import EdgeLink
 import Network
 import SwiftUI
 
@@ -80,7 +81,8 @@ final class KeyboardGrabber: ObservableObject {
         }
         channel.onClose = { [weak self, weak channel] in
             guard let self, let channel, self.channel === channel else { return }
-            self.lose("Lost \(name): its keyboard is released")
+            self.lose(self.lent ? "Lost \(name): its keyboard is released"
+                      : channel.failure?.message(for: name) ?? "Couldn't connect to \(name): is EdgeDeck running there?")
         }
         channel.start()
         var hello = Data([RemoteWire.version])
@@ -125,7 +127,8 @@ final class KeyboardGrabber: ObservableObject {
             lose("\(name) is still asking for a password: answer it there, then grab again")
         } else if !waiting, Date().timeIntervalSince(lastHeard) > 2 {
             lose(lent ? "Lost \(name): its keyboard is released"
-                 : "Couldn't reach \(name): is EdgeDeck running there? If it's asking for a password, answer it and try again")
+                 : channel?.failure?.message(for: name)
+                    ?? "Couldn't reach \(name): is EdgeDeck running there? If it's asking for a password, answer it and try again")
         }
     }
 

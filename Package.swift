@@ -7,7 +7,7 @@ let package = Package(
     targets: [
         .executableTarget(
             name: "EdgeDeck",
-            dependencies: ["EdgeTouch", "EdgeDisplay", "EdgeSensors", "EdgeMarkets", "EdgeAgents"],
+            dependencies: ["EdgeTouch", "EdgeDisplay", "EdgeSensors", "EdgeMarkets", "EdgeAgents", "EdgeLink"],
             path: "Sources/EdgeDeck",
             linkerSettings: [.linkedFramework("IOKit"), .linkedFramework("ApplicationServices"), .linkedLibrary("sqlite3")]
         ),
@@ -26,6 +26,9 @@ let package = Package(
         // Quota and event parsing for the Codex and Antigravity agents (pure, unit-tested).
         .target(name: "EdgeAgents", path: "Sources/EdgeAgents"),
         .testTarget(name: "EdgeAgentsTests", dependencies: ["EdgeAgents"], path: "Tests/EdgeAgentsTests"),
+        // Why a connection to another Mac failed, in words for the Edge (pure, unit-tested).
+        .target(name: "EdgeLink", path: "Sources/EdgeLink"),
+        .testTarget(name: "EdgeLinkTests", dependencies: ["EdgeLink"], path: "Tests/EdgeLinkTests"),
         // Hardware exploration: dumps the touch controller's HID descriptors and raw reports.
         .executableTarget(name: "touch-probe", path: "Sources/touch-probe"),
     ]
