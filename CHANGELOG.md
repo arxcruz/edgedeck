@@ -3,10 +3,12 @@
 What changed in each EdgeDeck release. Downloads are on the
 [Releases](https://github.com/arxcruz/edgedeck/releases) page.
 
-## Unreleased
+## 0.3.0 — 2026-10-29
 
-- **Fix:** connecting and then disconnecting **Codex** or **Antigravity** within the same second
-  no longer fails with "file exists" (the backup of their settings file got the same name).
+- **Fix (Music):** the Albums and playlists tabs no longer stay blank after one empty reply from
+  Music: each list keeps loading until it arrives, covers that failed are asked for again, and a
+  streamed album gets about 12 seconds to start before the "can't play" message. **Favourite Songs**
+  now has a heart cover.
 
 - **Clearer message when another Mac can't be reached:** Grab keyboard and Remote view now say
   whether the connection was blocked on the network (Wi-Fi that keeps devices apart, a VPN or a
