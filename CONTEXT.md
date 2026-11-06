@@ -30,6 +30,10 @@ _Avoid_: Panel, deck, home screen
 The state in which the Dashboard is off and the Edge is used as a normal monitor; touch still works on whatever window is there, and a swipe in from the right edge brings the Dashboard back. Bringing something to the Edge ends it.
 _Avoid_: Hidden mode, monitor mode, dashboard off
 
+**Edge off**:
+The state in which the Edge is dark and has no picture at all, so it gives off no light (e.g. at night), while EdgeDeck keeps running. The user turns the Edge off from a Button on the Dashboard or from the menu bar, and turns it on again only from the menu bar on the Mac: a touch never wakes it. It stays off across the Mac sleeping and the Edge being replugged, until the user turns it on. Quitting EdgeDeck turns the Edge on. Turning it off first ends any Takeover with a Send back. While it is off, touch does nothing and the menu says "Edge is off" rather than waiting for the Edge. From a Remote view the Button turns off the Host's Edge, but only the Host's menu turns it on, and the Source stays the same. If the Edge can't be turned off, it stays on and the user is told. Not Plain display (the Edge is lit and shows a normal monitor) and not macOS's display sleep (which sleeps every display).
+_Avoid_: Sleep, blank, blackout, disconnect
+
 **Page dots**:
 The row of dots showing how many Pages there are and which one is current. The only Page indicator; Pages have no visible names.
 _Avoid_: Page tabs, tab strip, page bar

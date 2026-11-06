@@ -15,6 +15,7 @@ struct ButtonDetail: View {
     enum Kind: String, CaseIterable, Identifiable {
         case app = "App", url = "URL", shortcut = "Shortcut", keys = "Keys", shell = "Shell", appleScript = "AppleScript"
         case plainDisplay = "Plain Display"
+        case edgeOff = "Edge Off"
         var id: String { rawValue }
 
         init(_ type: ActionConfig.Kind) {
@@ -26,6 +27,7 @@ struct ButtonDetail: View {
             case .shell: self = .shell
             case .appleScript: self = .appleScript
             case .plainDisplay: self = .plainDisplay
+            case .edgeOff: self = .edgeOff
             }
         }
     }
@@ -258,6 +260,7 @@ struct ButtonDetail: View {
             case .shell: scriptInput(text: $shellText, field: .shell, hint: "Runs with zsh -lc. Exit status 0 means it worked.")
             case .appleScript: scriptInput(text: $scriptText, field: .appleScript, hint: "Runs with osascript.")
             case .plainDisplay: hint("Turns the Dashboard off so the Edge is a normal monitor (touch keeps working). Swipe in from the Edge's right edge to bring it back.")
+            case .edgeOff: hint("Turns the Edge off so it gives off no light. Touch can't wake it: choose Turn Edge On in the EdgeDeck menu on the Mac.")
             }
         }
         .onChange(of: urlText) { _, _ in commit() }
@@ -276,6 +279,7 @@ struct ButtonDetail: View {
         case .shell: .init(type: .shell, value: shellText)
         case .appleScript: .init(type: .appleScript, value: scriptText)
         case .plainDisplay: .init(type: .plainDisplay, value: "on")
+        case .edgeOff: .init(type: .edgeOff, value: "on")
         }
         return action.value.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? nil : action
     }

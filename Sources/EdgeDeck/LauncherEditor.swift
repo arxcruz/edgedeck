@@ -86,6 +86,7 @@ enum LauncherPresets {
             key("Emoji", "face.smiling", system, "ctrl+cmd+space"),
             key("Force Quit", "xmark.octagon.fill", danger, "cmd+alt+escape"),
             ButtonConfig(title: "Display Sleep", symbol: "moon.fill", color: "#BF5AF2", action: .init(type: .shell, value: "pmset displaysleepnow")),
+            ButtonConfig(title: "Turn Edge Off", symbol: "power", color: "#BF5AF2", action: .init(type: .edgeOff, value: "on")),
             key("Lock", "lock.fill", danger, "ctrl+cmd+q"),
             ButtonConfig(title: "Plain Display", symbol: "display", color: system, action: .init(type: .plainDisplay, value: "on")),
         ]

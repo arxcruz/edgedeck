@@ -58,6 +58,8 @@ enum RemoteWire {
         case waiting
         /// Source → Host, just before it hangs up: why (UTF-8), for the Edge to show.
         case problem
+        /// Source → Host: the user tapped Turn Edge Off on the Source's Dashboard; turn off the Host's Edge.
+        case edgeOff
     }
 
     enum LendStatus: UInt8 {

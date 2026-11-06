@@ -123,7 +123,7 @@ Controls and Shortcuts to add.
 ![Launcher editor, Shortcuts tab](docs/screenshots/launcher-shortcuts.png)
 ![Launcher editor, Running tab](docs/screenshots/launcher-running.png)
 
-**Button**: its Action (App, URL, Shortcut, Keys, Shell, AppleScript, Plain Display),
+**Button**: its Action (App, URL, Shortcut, Keys, Shell, AppleScript, Plain Display, Edge Off),
 title, colour and icon, with **Try** to test it.
 
 ![Button editor](docs/screenshots/button-editor.png)
@@ -199,7 +199,7 @@ The build is ad-hoc signed, so macOS treats every rebuild as a new app and you
 have to re-enable Accessibility after rebuilding. To avoid that, sign with a
 stable identity: `SIGN_IDENTITY="Your Cert Name" ./scripts/build.sh`.
 
-The menu bar icon has Edit Layout, **Use as Plain Display**, Reload Config, Send Back Guest App,
+The menu bar icon has Edit Layout, **Use as Plain Display**, **Turn Edge Off** / **Turn Edge On**, Reload Config, Send Back Guest App,
 **Settings…** (⌘,) and Quit. **Settings** is an ordinary window on your main screen with
 General (**Open at Login**, which works for the copy in `/Applications`, and config.json), Display
 (which screen is the Edge, Rail width), Touch, Keyboard, Notifications (which apps come to the Edge
@@ -231,6 +231,18 @@ it only when macOS says it's missing, and a banner on the Edge says so until it'
 touchscreen back to macOS) and has scroll speed, reverse direction, momentum, flick
 acceleration, the hold time and hiding the cursor. If the old Edgetap app is
 running, EdgeDeck offers to quit it, since only one app can hold the touchscreen.
+
+### Edge off
+
+To sleep in a dark room, turn the Edge off so it gives off no light: a launcher button with
+the **Turn Edge Off** action (a Control in the Launcher editor, beside **Display Sleep**, which
+puts every display to sleep), or **Turn Edge Off** in the menu bar (⌘O while the menu is open).
+EdgeDeck sends back any app or video on the Edge first, then disables the display, so the
+backlight goes out. Touch does nothing while it's off. Turn it back on with **Turn Edge On**
+in the menu bar on the Mac; a touch won't wake it. It stays off when the Mac sleeps and wakes
+or the Edge is replugged (it may flash for a moment), and quitting EdgeDeck turns it on. When the
+Edge shows another Mac's Dashboard, that Mac's **Turn Edge Off** button turns off this Mac's Edge.
+If macOS refuses, the Edge stays on and the menu says so.
 
 ### Plain display
 
@@ -762,6 +774,8 @@ Ideas I may get to, in no particular order:
   the AI Agents widget.
 - **Now Playing**: a volume slider and ±15 s skip buttons.
 - **Widget themes**: choose a background colour or theme for each Widget, in its Editor.
+- **Scheduled Edge off**: turn the Edge off and on at set times (say 23:00 and 07:00), or
+  when the Mac locks, instead of by hand.
 - **Analog faces**: show Timer, Pomodoro and World Clock as an analog dial instead of digits.
 
 ## License

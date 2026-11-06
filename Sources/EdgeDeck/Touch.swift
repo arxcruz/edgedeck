@@ -106,6 +106,11 @@ final class TouchController: ObservableObject {
     var onEdgetapFound: () -> Void = {}
     /// While the Edge is a Plain display, a swipe in from its right edge calls `onEdgeSwipe`.
     var plainDisplay = false
+    /// The Edge is off, so it has no display. The touchscreen stays held, and every touch is
+    /// dropped, so none reaches the Mac's own screen.
+    var edgeOff = false {
+        didSet { if edgeOff != oldValue { reconcile() } }
+    }
     var onEdgeSwipe: () -> Void = {}
 
     private let engine = GestureEngine()
@@ -164,7 +169,7 @@ final class TouchController: ObservableObject {
             if status != newStatus { status = newStatus }
         }
         guard settings.enabled else { return idle(.off) }
-        guard display != nil else { return idle(.noEdge) }
+        guard display != nil || edgeOff else { return idle(.noEdge) }
         guard AXIsProcessTrusted() else { return idle(.needsAccessibility) }
         // Opening the touchscreen can succeed without Input Monitoring and then deliver nothing,
         // so check the permission itself; asking is what makes macOS show its prompt.

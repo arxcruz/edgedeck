@@ -55,6 +55,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
     /// On the main screen while this Mac's keyboard types on another Mac.
     private var keyboardLabel: NSPanel?
     private var plainItem: NSMenuItem!
+    private var edgeOffItem: NSMenuItem!
+    /// Why the Edge couldn't be turned off or on, shown in the menu until the next try.
+    private var edgeOffProblemItem: NSMenuItem!
     /// On a Plain display: the pull-tab hint at the right edge, shown for a few seconds.
     private var pullTab: EdgePanel!
     private var pullTabHide: DispatchWorkItem?
@@ -147,6 +150,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
             if on { self.panel.makeKey() }
         }
 
+        model.onTurnEdgeOff = { [weak self] in self?.turnEdgeOff() }
         setUpStatusItem()
         setUpKeyboardLabel()
         // Before the first placePanel: starting on a Plain display shows the pull tab at once.
@@ -236,7 +240,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
     }
 
     @objc private func placePanel() {
-        if let screen = targetScreen() {
+        // After a replug or a wake macOS enables the Edge again: put it back off.
+        if model.edgeOff, let screen = targetScreen(), let display = Self.displayID(of: screen),
+           NSScreen.screens.count > 1 {
+            _ = PrivateDisplayModes.setEnabled(false, display: display)
+        }
+        if !model.edgeOff, let screen = targetScreen() {
             // Stop below the menu bar the Edge shows when displays have separate Spaces.
             var frame = screen.frame
             frame.size.height = screen.visibleFrame.maxY - screen.frame.minY
@@ -403,6 +412,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
         menu.addItem(remoteItem)
         plainItem = NSMenuItem(title: "Use as Plain Display", action: #selector(togglePlainDisplay), keyEquivalent: "d")
         menu.addItem(plainItem)
+        edgeOffItem = NSMenuItem(title: "Turn Edge Off", action: #selector(toggleEdgeOff), keyEquivalent: "o")
+        menu.addItem(edgeOffItem)
+        edgeOffProblemItem = NSMenuItem(title: "", action: nil, keyEquivalent: "")
+        edgeOffProblemItem.isEnabled = false
+        edgeOffProblemItem.isHidden = true
+        menu.addItem(edgeOffProblemItem)
         menu.addItem(NSMenuItem(title: "Reload Config", action: #selector(reloadConfig), keyEquivalent: "r"))
         menu.addItem(NSMenuItem(title: "Send Back Guest App", action: #selector(sendBack), keyEquivalent: "u"))
         menu.addItem(.separator())
@@ -414,6 +429,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
 
         model.$editing.sink { [weak self] editing in self?.editItem.state = editing ? .on : .off }.store(in: &cancellables)
         model.$plainDisplay.sink { [weak self] plain in self?.plainItem.state = plain ? .on : .off }.store(in: &cancellables)
+        model.$edgeOff.dropFirst().sink { [weak self] _ in DispatchQueue.main.async { self?.updateStatusItem() } }.store(in: &cancellables)
     }
 
     /// The menu bar icon and menu say whether the Edge is connected.
@@ -426,9 +442,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
             statusItem.button?.image = NSImage(systemSymbolName: connected ? "rectangle.split.3x1" : "rectangle.dashed",
                                                accessibilityDescription: connected ? "EdgeDeck" : "EdgeDeck: waiting for the Edge")
         }
+        waitingItem.title = model.edgeOff ? "Edge is off" : "Waiting for the Xeneon Edge…"
         waitingItem.isHidden = connected
-        previewItem.isHidden = connected
+        previewItem.isHidden = connected || model.edgeOff
+        edgeOffItem.title = model.edgeOff ? "Turn Edge On" : "Turn Edge Off"
         previewItem.state = previewWindow != nil ? .on : .off
+    }
+
+    /// While the Edge is off, what needs the Edge is greyed out; it can't be turned off if it isn't there.
+    func validateMenuItem(_ item: NSMenuItem) -> Bool {
+        switch item.action {
+        case #selector(toggleEdgeOff): model.edgeOff || model.edgeConnected
+        case #selector(toggleEditing), #selector(togglePlainDisplay), #selector(sendBack): !model.edgeOff
+        default: true
+        }
     }
 
     /// The submenu is filled when it opens, not every time the main menu does.
@@ -527,6 +554,51 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
 
     @objc private func toggleEditing() { model.editing.toggle() }
     @objc private func togglePlainDisplay() { model.plainDisplay.toggle() }
+    @objc private func toggleEdgeOff() { model.edgeOff ? turnEdgeOn() : turnEdgeOff() }
+
+    // MARK: Edge off
+
+    private static func displayID(of screen: NSScreen) -> CGDirectDisplayID? {
+        (screen.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? NSNumber)?.uint32Value
+    }
+
+    private func edgeOffFailed(_ text: String) {
+        edgeOffProblemItem.title = text
+        edgeOffProblemItem.isHidden = false
+        model.flashPlayerMessage(text)
+    }
+
+    /// Ends any Takeover, then disables the Edge. A failure leaves it on.
+    private func turnEdgeOff() {
+        guard !model.edgeOff else { return }
+        guard let screen = targetScreen(), let display = Self.displayID(of: screen) else {
+            return edgeOffFailed("The Edge isn't connected")
+        }
+        // Never leave the Mac with no screen (a KVM or dock may have hidden the others).
+        guard NSScreen.screens.count > 1 else { return edgeOffFailed("The Edge is your only display") }
+        model.editing = false
+        model.guest.sendBack()
+        if model.player.isOpen { model.sendBackVideo() }
+        guard PrivateDisplayModes.setEnabled(false, display: display) else {
+            return edgeOffFailed("Couldn't turn the Edge off")
+        }
+        edgeOffProblemItem.isHidden = true
+        UserDefaults.standard.set(Int(display), forKey: "edgeOff.display")
+        model.edgeOff = true
+        placePanel()
+    }
+
+    /// Enables the Edge again. A disabled display is not "online", so it is enabled by its saved
+    /// ID whatever the display list says; for a display that's gone this does nothing.
+    private func turnEdgeOn() {
+        guard model.edgeOff else { return }
+        let saved = UserDefaults.standard.integer(forKey: "edgeOff.display")
+        if saved != 0 { _ = PrivateDisplayModes.setEnabled(true, display: CGDirectDisplayID(saved)) }
+        edgeOffProblemItem.isHidden = true
+        model.edgeOff = false
+        // Enabling raises a display change, which places the Dashboard (and fixes the mode).
+        placePanel()
+    }
 
     // MARK: Plain display
 
@@ -592,6 +664,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
     @objc private func sendBack() { model.guest.sendBack() }
 
     func applicationWillTerminate(_ notification: Notification) {
+        // Quitting turns the Edge on: nothing would be left to turn it on.
+        turnEdgeOn()
         model.touch.stop()
         model.guest.sendBack()
         model.nowPlaying.stop()
