@@ -17,6 +17,7 @@ enum PrivateDisplayModes {
 
     private typealias CountFn = @convention(c) (UInt32, UnsafeMutablePointer<Int32>) -> Int32
     private typealias DescribeFn = @convention(c) (UInt32, Int32, UnsafeMutableRawPointer, Int32) -> Int32
+    private typealias EnableFn = @convention(c) (CGDisplayConfigRef?, UInt32, Bool) -> CGError
     private typealias ConfigureFn = @convention(c) (CGDisplayConfigRef?, UInt32, Int32) -> CGError
 
     // CGSDisplayMode: modeNumber, flags, width, height, depth (UInt32 each), 170 unknown bytes,
@@ -60,5 +61,18 @@ enum PrivateDisplayModes {
             return false
         }
         return CGCompleteDisplayConfiguration(config, .permanently) == .success
+    }
+
+    /// Turns a display off (macOS then treats it as unplugged and the monitor loses its signal)
+    /// or on again. For this login session only, so a restart always brings it back.
+    static func setEnabled(_ enabled: Bool, display: CGDirectDisplayID) -> Bool {
+        guard let configure = symbol("CGSConfigureDisplayEnabled", as: EnableFn.self) else { return false }
+        var config: CGDisplayConfigRef?
+        guard CGBeginDisplayConfiguration(&config) == .success, let config else { return false }
+        guard configure(config, display, enabled) == .success else {
+            CGCancelDisplayConfiguration(config)
+            return false
+        }
+        return CGCompleteDisplayConfiguration(config, .forSession) == .success
     }
 }

@@ -106,6 +106,9 @@ final class RemoteHost: ObservableObject {
         timer = Timer.scheduledTimer(withTimeInterval: 0.5, repeats: true) { [weak self] _ in self?.tick() }
     }
 
+    /// The Source asked for the Edge to be turned off.
+    var onEdgeOff: () -> Void = {}
+
     /// Back to this Mac's own Dashboard.
     func end() {
         timer?.invalidate()
@@ -214,6 +217,8 @@ final class RemoteHost: ObservableObject {
             if let format, let sample = Self.sampleBuffer(payload, format: format) { enqueue(sample) }
         case .problem:
             lose(String(decoding: payload, as: UTF8.self))
+        case .edgeOff:
+            onEdgeOff()
         case .state:
             sourceEditing = payload.first == 1
             sourceTyping = payload.count >= 2 && payload[payload.startIndex + 1] == 1
@@ -389,6 +394,13 @@ final class RemoteSource: ObservableObject {
     /// A Host started watching at this Dashboard size (nil = nobody watching). The app delegate
     /// places the Dashboard panel and returns it, for capture.
     var onWatch: (CGSize?) -> NSWindow? = { _ in nil }
+
+    /// Asks the Host, if one is watching, to turn its Edge off. False when none is.
+    func requestEdgeOff() -> Bool {
+        guard isWatched, let channel else { return false }
+        channel.send(.edgeOff)
+        return true
+    }
     /// A Host wants to Pair: ask for the code shown on its Edge (nil = cancelled).
     var onPairRequest: (_ hostName: String, _ answer: @escaping (String?) -> Void) -> Void = { $1(nil) }
     /// Before reading a Pairing secret: the app may explain macOS's password prompt and offer to

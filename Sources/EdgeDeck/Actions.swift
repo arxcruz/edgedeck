@@ -14,6 +14,8 @@ struct ActionResult {
 enum ActionRunner {
     /// Turns the Dashboard off (the Plain display Action); set by the app model.
     static var showPlainDisplay: () -> Void = {}
+    /// Turns the Edge off (the Edge off Action); set by the app model.
+    static var turnEdgeOff: () -> Void = {}
 
     static func run(_ action: ActionConfig, guest: GuestAppManager, completion: ((ActionResult) -> Void)? = nil) {
         let done = completion ?? { _ in }
@@ -45,6 +47,9 @@ enum ActionRunner {
             done(ActionResult(ok: true))
         case .plainDisplay:
             showPlainDisplay()
+            done(ActionResult(ok: true))
+        case .edgeOff:
+            turnEdgeOff()
             done(ActionResult(ok: true))
         }
     }

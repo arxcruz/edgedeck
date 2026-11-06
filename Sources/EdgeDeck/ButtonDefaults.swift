@@ -18,6 +18,7 @@ enum ButtonDefaults {
         case .shell: return "Shell"
         case .appleScript: return "AppleScript"
         case .plainDisplay: return "Plain Display"
+        case .edgeOff: return "Turn Edge Off"
         }
     }
 
@@ -51,6 +52,7 @@ enum ButtonDefaults {
         case .shell: "terminal"
         case .appleScript: "applescript"
         case .plainDisplay: "display"
+        case .edgeOff: "power"
         }
     }
 

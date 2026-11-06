@@ -3,6 +3,12 @@
 What changed in each EdgeDeck release. Downloads are on the
 [Releases](https://github.com/arxcruz/edgedeck/releases) page.
 
+## Unreleased
+
+- **Turn the Edge off** so it gives off no light at night: a **Turn Edge Off** Control for the
+  Launcher, and **Turn Edge Off** / **Turn Edge On** in the menu bar. Touch can't wake it; it stays
+  off through sleep and replugging, and quitting EdgeDeck turns it on.
+
 ## 0.3.0 — 2026-10-29
 
 - **Fix (Music):** the Albums and playlists tabs no longer stay blank after one empty reply from

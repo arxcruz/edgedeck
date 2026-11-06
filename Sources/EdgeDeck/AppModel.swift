@@ -60,6 +60,16 @@ final class AppModel: ObservableObject {
             }
         }
     }
+    /// The Edge is switched off (dark, no picture) until the menu turns it on. Remembered, so it
+    /// stays off across the Mac sleeping and the Edge being replugged.
+    @Published var edgeOff = UserDefaults.standard.bool(forKey: "edgeOff") {
+        didSet {
+            UserDefaults.standard.set(edgeOff, forKey: "edgeOff")
+            touch.edgeOff = edgeOff
+        }
+    }
+    /// Set by the app delegate, which owns the display.
+    var onTurnEdgeOff: () -> Void = {}
     @Published private(set) var accessibilityGranted = AXIsProcessTrusted()
 
     private var cancellables = Set<AnyCancellable>()
@@ -93,6 +103,13 @@ final class AppModel: ObservableObject {
         touch.plainDisplay = plainDisplay
         touch.onEdgeSwipe = { [weak self] in self?.plainDisplay = false }
         ActionRunner.showPlainDisplay = { [weak self] in self?.plainDisplay = true }
+        touch.edgeOff = edgeOff
+        // On a Source being watched, the Edge is the Host's: ask it to turn its Edge off.
+        ActionRunner.turnEdgeOff = { [weak self] in
+            guard let self, !self.remoteSource.requestEdgeOff() else { return }
+            self.onTurnEdgeOff()
+        }
+        remoteHost.onEdgeOff = { [weak self] in self?.onTurnEdgeOff() }
         // Bringing something to the Edge ends a Plain display, so its Rail (and Send back) show.
         guest.$current
             .sink { [weak self] current in if current != nil { self?.plainDisplay = false } }

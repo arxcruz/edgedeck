@@ -95,6 +95,8 @@ struct ActionConfig: Codable, Hashable {
         case bringToEdge
         /// value: unused. Turns the Dashboard off: the Edge becomes a Plain display.
         case plainDisplay
+        /// value: unused. Turns the Edge off: dark, no picture, until the menu turns it on.
+        case edgeOff
 
         init(from decoder: Decoder) throws {
             let raw = try decoder.singleValueContainer().decode(String.self)
